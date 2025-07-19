@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Monedio</title>
+    <script src="https://cdn.jsdelivr.net/npm/@multisynq/client@latest/bundled/multisynq-client.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: #90EE90;
+            cursor: none;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="ui">
+        <div>Size: <span id="sizeDisplay">10</span></div>
+        <div>Players: <span id="playersCount">1</span></div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const API_KEY = "2GzxJfKu10qeIJcl0FsTY5AbhgXQj2ZgaXJhm6jHbK";
+        const CANVAS_WIDTH = window.innerWidth;
+        const CANVAS_HEIGHT = window.innerHeight;
+        const WORLD_WIDTH = 2000;
+        const WORLD_HEIGHT = 2000;
+
+        // Game Model - handles all game logic and state
+        class MopeGameModel extends Multisynq.Model {
+            init() {
+                // Game state
+                this.players = new Map();
+                this.food = new Map();
+                this.nextFoodId = 0;
+
+                // Subscribe to player events
+                this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
+                this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
+                this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
+
+                // Spawn initial food
+                this.spawnFood(50);
+
+                // Start food spawning loop
+                this.future(1000, () => this.spawnFoodLoop());
+
+                console.log("Game model initialized");
+            }
+
+            handlePlayerJoin(data) {
+                const playerId = data.playerId;
+                this.players.set(playerId, {
+                    id: playerId,
+                    x: Math.random() * WORLD_WIDTH,
+                    y: Math.random() * WORLD_HEIGHT,
+                    size: 15,
+                    color: this.getRandomColor()
+                });
+
+                console.log("Player joined:", playerId);
+                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+            }
+
+            handlePlayerMove(data) {
+                const player = this.players.get(data.playerId);
+                if (player) {
+                    // Update player position (smooth movement towards mouse)
+                    const dx = data.targetX - player.x;
+                    const dy = data.targetY - player.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance > 2) {
+                        const moveSpeed = Math.max(1, 5 - player.size * 0.1);
+                        player.x += (dx / distance) * moveSpeed;
+                        player.y += (dy / distance) * moveSpeed;
+
+                        // Keep player in bounds
+                        player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
+                        player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
+
+                        // Check food collisions
+                        this.checkFoodCollisions(player);
+                    }
+                }
+
+                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+            }
+
+            handlePlayerLeave(data) {
+                this.players.delete(data.playerId);
+                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+            }
+
+            checkFoodCollisions(player) {
+                for (let [foodId, food] of this.food.entries()) {
+                    const dx = player.x - food.x;
+                    const dy = player.y - food.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < player.size + food.size) {
+                        // Player eats food
+                        this.food.delete(foodId);
+                        player.size += 1;
+
+                        // Spawn new food to replace eaten one
+                        this.spawnFood(1);
+                        break;
+                    }
+                }
+            }
+
+            spawnFood(count) {
+                for (let i = 0; i < count; i++) {
+                    const foodId = this.nextFoodId++;
+                    this.food.set(foodId, {
+                        id: foodId,
+                        x: Math.random() * WORLD_WIDTH,
+                        y: Math.random() * WORLD_HEIGHT,
+                        size: 4,
+                        color: this.getRandomFoodColor()
+                    });
+                }
+            }
+
+            spawnFoodLoop() {
+                // Maintain food count
+                if (this.food.size < 40) {
+                    this.spawnFood(5);
+                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                }
+
+                // Schedule next spawn
+                this.future(2000, () => this.spawnFoodLoop());
+            }
+
+            getGameState() {
+                return {
+                    players: Array.from(this.players.values()),
+                    food: Array.from(this.food.values())
+                };
+            }
+
+            getRandomColor() {
+                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FCEA2B', '#FF9FF3'];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            getRandomFoodColor() {
+                const colors = ['#FF4757', '#5352ED', '#00D2D3', '#FF9F43', '#6C5CE7'];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+        }
+
+        // Game View - handles rendering and input
+        class MopeGameView extends Multisynq.View {
+            constructor(model) {
+                super(model);
+
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.playerId = this.sessionId + '_' + Math.random().toString(36).substr(2, 9);
+
+                // Set canvas size
+                this.canvas.width = CANVAS_WIDTH;
+                this.canvas.height = CANVAS_HEIGHT;
+
+                // Game state
+                this.gameState = { players: [], food: [] };
+                this.camera = { x: 0, y: 0 };
+                this.mousePos = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+
+                // Subscribe to game updates
+                this.subscribe(this.sessionId, "gameStateUpdate", (state) => this.updateGameState(state));
+
+                // Setup input
+                this.setupInput();
+
+                // Start render loop
+                this.render();
+                setInterval(() => this.render(), 1000 / 60);
+
+                // Join the game
+                this.publish(this.sessionId, "playerJoin", { playerId: this.playerId });
+
+                console.log("Game view initialized, player ID:", this.playerId);
+            }
+
+            setupInput() {
+                // Mouse movement
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mousePos.x = e.clientX - rect.left;
+                    this.mousePos.y = e.clientY - rect.top;
+
+                    // Convert screen coordinates to world coordinates
+                    const worldX = this.mousePos.x + this.camera.x;
+                    const worldY = this.mousePos.y + this.camera.y;
+
+                    // Send movement to model
+                    this.publish(this.sessionId, "playerMove", {
+                        playerId: this.playerId,
+                        targetX: worldX,
+                        targetY: worldY
+                    });
+                });
+
+                // Handle window resize
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+            }
+
+            updateGameState(state) {
+                this.gameState = state;
+
+                // Update UI
+                const myPlayer = state.players.find(p => p.id === this.playerId);
+                if (myPlayer) {
+                    document.getElementById('sizeDisplay').textContent = Math.floor(myPlayer.size);
+
+                    // Update camera to follow player
+                    this.camera.x = myPlayer.x - CANVAS_WIDTH / 2;
+                    this.camera.y = myPlayer.y - CANVAS_HEIGHT / 2;
+
+                    // Keep camera in bounds
+                    this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - CANVAS_WIDTH, this.camera.x));
+                    this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - CANVAS_HEIGHT, this.camera.y));
+                }
+
+                document.getElementById('playersCount').textContent = state.players.length;
+            }
+
+            render() {
+                // Clear canvas
+                this.ctx.fillStyle = '#90EE90';
+                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Save context for camera transform
+                this.ctx.save();
+                this.ctx.translate(-this.camera.x, -this.camera.y);
+
+                // Draw food
+                this.gameState.food.forEach(food => {
+                    this.ctx.fillStyle = food.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                });
+
+                // Draw players
+                this.gameState.players.forEach(player => {
+                    // Player body
+                    this.ctx.fillStyle = player.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+
+                    // Player outline
+                    this.ctx.strokeStyle = '#000';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+
+                    // Highlight own player
+                    if (player.id === this.playerId) {
+                        this.ctx.strokeStyle = '#FFF';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.stroke();
+                    }
+                });
+
+                // Restore context
+                this.ctx.restore();
+
+                // Draw grid for reference (optional)
+                this.drawGrid();
+            }
+
+            drawGrid() {
+                this.ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                this.ctx.lineWidth = 1;
+
+                const gridSize = 100;
+                const startX = -(this.camera.x % gridSize);
+                const startY = -(this.camera.y % gridSize);
+
+                for (let x = startX; x < CANVAS_WIDTH; x += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 0);
+                    this.ctx.lineTo(x, CANVAS_HEIGHT);
+                    this.ctx.stroke();
+                }
+
+                for (let y = startY; y < CANVAS_HEIGHT; y += gridSize) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(CANVAS_WIDTH, y);
+                    this.ctx.stroke();
+                }
+            }
+        }
+
+        // Start the game
+        MopeGameModel.register("MopeGameModel");
+        Multisynq.Session.join({
+            apiKey: API_KEY,
+            appId: "com.mopeio.clone",
+            model: MopeGameModel,
+            view: MopeGameView,
+            name: Multisynq.App.autoSession(),
+            password: Multisynq.App.autoPassword()
+        }).then(session => {
+            console.log("Joined game session:", session.id);
+            Multisynq.App.makeWidgetDock();
+        }).catch(error => {
+            console.error("Failed to join session:", error);
+        });
+    </script>
+</body>
+
+</html>
