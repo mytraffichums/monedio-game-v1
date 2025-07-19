@@ -188,6 +188,7 @@
                 this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
                 this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
                 this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
+                this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
 
                 // Spawn initial food
                 this.spawnFood(50);
@@ -254,6 +255,33 @@
             handlePlayerLeave(data) {
                 this.players.delete(data.playerId);
                 this.publishGameStateThrottled();
+            }
+
+            handleFoodEaten(data) {
+                const foodId = data.foodId;
+                const playerId = data.playerId;
+                const player = this.players.get(playerId);
+
+                // Verify the food still exists and player is close enough
+                if (player && this.food.has(foodId)) {
+                    const food = this.food.get(foodId);
+                    const dx = player.x - food.x;
+                    const dy = player.y - food.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Double-check collision on server side
+                    if (distance < player.size + food.size) {
+                        this.food.delete(foodId);
+                        player.size += 1;
+
+                        // Spawn new food to replace eaten one
+                        this.spawnFood(1);
+                        console.log("Food eaten by player:", playerId, "Food ID:", foodId);
+                        
+                        // Send immediate update for food consumption
+                        this.publishGameStateThrottled();
+                    }
+                }
             }
 
             checkFoodCollisions(player) {
@@ -371,6 +399,10 @@
                 this.camera = { x: 0, y: 0 };
                 this.mousePos = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
 
+                // Local food state for client-side prediction
+                this.localFoodState = new Map(); // Track which food items are locally "eaten"
+                this.predictedEatenFood = new Set(); // Food IDs that we predict are eaten
+
                 // Initialize performance stats
                 this.perfStats = new PerformanceStats();
 
@@ -459,11 +491,43 @@
                     this.localPlayer.y = Math.max(this.localPlayer.size, Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y));
                 }
 
+                // Client-side food collision detection for immediate feedback
+                this.checkLocalFoodCollisions();
+
                 // Update camera to follow local player
                 this.camera.x = this.localPlayer.x - CANVAS_WIDTH / 2;
                 this.camera.y = this.localPlayer.y - CANVAS_HEIGHT / 2;
                 this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - CANVAS_WIDTH, this.camera.x));
                 this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - CANVAS_HEIGHT, this.camera.y));
+            }
+
+            checkLocalFoodCollisions() {
+                // Check collisions with food items that aren't already predicted as eaten
+                this.gameState.food.forEach(food => {
+                    if (!this.predictedEatenFood.has(food.id)) {
+                        const dx = this.localPlayer.x - food.x;
+                        const dy = this.localPlayer.y - food.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        if (distance < this.localPlayer.size + food.size) {
+                            // Predict food is eaten - hide it immediately
+                            this.predictedEatenFood.add(food.id);
+                            
+                            // Predict size increase
+                            this.localPlayer.size += 1;
+                            
+                            // Send food eaten event to server
+                            this.publish(this.sessionId, "foodEaten", {
+                                playerId: this.playerId,
+                                foodId: food.id,
+                                playerX: this.localPlayer.x,
+                                playerY: this.localPlayer.y
+                            });
+
+                            console.log("Food eaten locally:", food.id);
+                        }
+                    }
+                });
             }
 
             sendNetworkUpdate() {
@@ -484,6 +548,19 @@
             }
 
             updateGameState(state) {
+                // Reconcile food predictions with server state
+                const serverFoodIds = new Set(state.food.map(f => f.id));
+                
+                // Check our predictions against server reality
+                for (let predictedFoodId of this.predictedEatenFood) {
+                    if (serverFoodIds.has(predictedFoodId)) {
+                        // Server still has this food - our prediction was wrong, remove from predicted set
+                        this.predictedEatenFood.delete(predictedFoodId);
+                        console.log("Food prediction corrected - food still exists:", predictedFoodId);
+                    }
+                    // If server doesn't have the food, our prediction was correct - keep it in the set
+                }
+
                 // Update other players with server data
                 this.gameState = state;
 
@@ -500,7 +577,7 @@
                         this.localPlayer.y = serverPlayer.y;
                     }
 
-                    // Update size from server
+                    // Always sync size from server (authoritative for food consumption)
                     this.localPlayer.size = serverPlayer.size;
                     this.localPlayer.color = serverPlayer.color;
 
@@ -528,10 +605,13 @@
 
                 // Draw food
                 this.gameState.food.forEach(food => {
-                    this.ctx.fillStyle = food.color;
-                    this.ctx.beginPath();
-                    this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
-                    this.ctx.fill();
+                    // Skip food that we predict has been eaten
+                    if (!this.predictedEatenFood.has(food.id)) {
+                        this.ctx.fillStyle = food.color;
+                        this.ctx.beginPath();
+                        this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
                 });
 
                 // Draw other players (from server data)
