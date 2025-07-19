@@ -28,6 +28,19 @@
             font-size: 18px;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
         }
+
+        #perfStats {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
     </style>
 </head>
 
@@ -35,6 +48,13 @@
     <div id="ui">
         <div>Size: <span id="sizeDisplay">10</span></div>
         <div>Players: <span id="playersCount">1</span></div>
+    </div>
+    <div id="perfStats">
+        <div>FPS: <span id="fpsDisplay">--</span></div>
+        <div>Frame: <span id="frameTimeDisplay">--</span>ms</div>
+        <div>Avg: <span id="avgFrameDisplay">--</span>ms</div>
+        <div>Min/Max: <span id="minMaxDisplay">--/--</span>ms</div>
+        <div>Latency: <span id="latencyDisplay">--</span>ms</div>
     </div>
     <canvas id="gameCanvas"></canvas>
 
@@ -44,6 +64,114 @@
         const CANVAS_HEIGHT = window.innerHeight;
         const WORLD_WIDTH = 2000;
         const WORLD_HEIGHT = 2000;
+
+        // Performance Stats Class
+        class PerformanceStats {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+                this.frameStartTime = performance.now();
+                this.frameTimes = [];
+                this.maxSamples = 60; // Keep last 60 frame times
+                this.lastFpsUpdate = 0;
+                this.fps = 0;
+                this.avgFrameTime = 0;
+                this.minFrameTime = Infinity;
+                this.maxFrameTime = 0;
+                this.inputLatency = 0;
+                this.lastInputTime = 0;
+
+                // DOM elements
+                this.fpsDisplay = document.getElementById('fpsDisplay');
+                this.frameTimeDisplay = document.getElementById('frameTimeDisplay');
+                this.avgFrameDisplay = document.getElementById('avgFrameDisplay');
+                this.minMaxDisplay = document.getElementById('minMaxDisplay');
+                this.latencyDisplay = document.getElementById('latencyDisplay');
+            }
+
+            startFrame() {
+                this.frameStartTime = performance.now();
+            }
+
+            endFrame() {
+                const now = performance.now();
+                const frameTime = now - this.frameStartTime;
+                
+                // Add frame time to our sample array
+                this.frameTimes.push(frameTime);
+                if (this.frameTimes.length > this.maxSamples) {
+                    this.frameTimes.shift();
+                }
+
+                // Update min/max
+                this.minFrameTime = Math.min(this.minFrameTime, frameTime);
+                this.maxFrameTime = Math.max(this.maxFrameTime, frameTime);
+
+                this.frameCount++;
+
+                // Update FPS and stats every 250ms
+                if (now - this.lastFpsUpdate > 250) {
+                    this.updateStats(now);
+                    this.lastFpsUpdate = now;
+                }
+            }
+
+            updateStats(now) {
+                // Calculate FPS
+                const timeDelta = now - this.lastTime;
+                if (timeDelta > 0) {
+                    this.fps = Math.round((this.frameCount * 1000) / timeDelta);
+                }
+
+                // Calculate average frame time
+                if (this.frameTimes.length > 0) {
+                    this.avgFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
+                }
+
+                // Reset counters
+                this.frameCount = 0;
+                this.lastTime = now;
+
+                // Update UI
+                this.updateDisplay();
+            }
+
+            updateDisplay() {
+                this.fpsDisplay.textContent = this.fps;
+                this.frameTimeDisplay.textContent = this.frameTimes.length > 0 ? 
+                    this.frameTimes[this.frameTimes.length - 1].toFixed(1) : '--';
+                this.avgFrameDisplay.textContent = this.avgFrameTime.toFixed(1);
+                this.minMaxDisplay.textContent = 
+                    `${this.minFrameTime === Infinity ? '--' : this.minFrameTime.toFixed(1)}/${this.maxFrameTime.toFixed(1)}`;
+                this.latencyDisplay.textContent = this.inputLatency.toFixed(1);
+
+                // Color code FPS based on performance
+                if (this.fps >= 55) {
+                    this.fpsDisplay.style.color = '#4CAF50'; // Green
+                } else if (this.fps >= 30) {
+                    this.fpsDisplay.style.color = '#FF9800'; // Orange  
+                } else {
+                    this.fpsDisplay.style.color = '#F44336'; // Red
+                }
+            }
+
+            recordInputLatency() {
+                this.lastInputTime = performance.now();
+            }
+
+            measureInputLatency() {
+                if (this.lastInputTime > 0) {
+                    this.inputLatency = performance.now() - this.lastInputTime;
+                    this.lastInputTime = 0;
+                }
+            }
+
+            reset() {
+                this.minFrameTime = Infinity;
+                this.maxFrameTime = 0;
+                this.frameTimes = [];
+            }
+        }
 
         // Game Model - handles all game logic and state
         class MopeGameModel extends Multisynq.Model {
@@ -64,6 +192,12 @@
                 // Start food spawning loop
                 this.future(1000, () => this.spawnFoodLoop());
 
+                // Start server-side movement update loop
+                this.future(50, () => this.updateServerMovement());
+
+                // Start periodic state broadcast
+                this.future(200, () => this.broadcastGameState());
+
                 console.log("Game model initialized");
             }
 
@@ -73,6 +207,8 @@
                     id: playerId,
                     x: Math.random() * WORLD_WIDTH,
                     y: Math.random() * WORLD_HEIGHT,
+                    targetX: Math.random() * WORLD_WIDTH,
+                    targetY: Math.random() * WORLD_HEIGHT,
                     size: 15,
                     color: this.getRandomColor()
                 });
@@ -84,26 +220,38 @@
             handlePlayerMove(data) {
                 const player = this.players.get(data.playerId);
                 if (player) {
-                    // Update player position (smooth movement towards mouse)
-                    const dx = data.targetX - player.x;
-                    const dy = data.targetY - player.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    if (distance > 2) {
-                        const moveSpeed = Math.max(1, 5 - player.size * 0.1);
-                        player.x += (dx / distance) * moveSpeed;
-                        player.y += (dy / distance) * moveSpeed;
-
-                        // Keep player in bounds
-                        player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
-                        player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
-
-                        // Check food collisions
-                        this.checkFoodCollisions(player);
+                    // Use client's predicted position if reasonable, otherwise interpolate
+                    if (data.x && data.y) {
+                        const dx = data.x - player.x;
+                        const dy = data.y - player.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        // If client position is reasonable, use it
+                        if (distance < 100) {
+                            player.x = data.x;
+                            player.y = data.y;
+                        }
                     }
+
+                    // Store target for server-side movement
+                    player.targetX = data.targetX;
+                    player.targetY = data.targetY;
+
+                    // Keep player in bounds
+                    player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
+                    player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
+
+                    // Check food collisions
+                    this.checkFoodCollisions(player);
                 }
 
-                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                // Throttle game state updates to reduce network spam
+                this.lastGameStateUpdate = this.lastGameStateUpdate || 0;
+                const now = Date.now();
+                if (now - this.lastGameStateUpdate > 100) { // Max 10 updates per second
+                    this.lastGameStateUpdate = now;
+                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                }
             }
 
             handlePlayerLeave(data) {
@@ -153,6 +301,35 @@
                 this.future(2000, () => this.spawnFoodLoop());
             }
 
+            updateServerMovement() {
+                // Update all players' positions on server-side
+                for (let [playerId, player] of this.players.entries()) {
+                    if (player.targetX !== undefined && player.targetY !== undefined) {
+                        const dx = player.targetX - player.x;
+                        const dy = player.targetY - player.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        if (distance > 2) {
+                            const moveSpeed = Math.max(1, 5 - player.size * 0.1);
+                            player.x += (dx / distance) * moveSpeed * 0.5; // Slower server movement
+                            player.y += (dy / distance) * moveSpeed * 0.5;
+
+                            // Keep player in bounds
+                            player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
+                            player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
+                        }
+                    }
+                }
+
+                // Schedule next update
+                this.future(50, () => this.updateServerMovement()); // 20Hz server updates
+            }
+
+            broadcastGameState() {
+                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                this.future(200, () => this.broadcastGameState()); // Broadcast every 200ms
+            }
+
             getGameState() {
                 return {
                     players: Array.from(this.players.values()),
@@ -189,15 +366,34 @@
                 this.camera = { x: 0, y: 0 };
                 this.mousePos = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
 
+                // Initialize performance stats
+                this.perfStats = new PerformanceStats();
+
+                // Client-side prediction state
+                this.localPlayer = {
+                    x: Math.random() * WORLD_WIDTH,
+                    y: Math.random() * WORLD_HEIGHT,
+                    size: 15,
+                    color: '#FF6B6B',
+                    targetX: 0,
+                    targetY: 0
+                };
+
+                // Network sync timing
+                this.lastNetworkSync = 0;
+                this.networkSyncInterval = 100; // Send position every 100ms (10Hz)
+
                 // Subscribe to game updates
                 this.subscribe(this.sessionId, "gameStateUpdate", (state) => this.updateGameState(state));
 
                 // Setup input
                 this.setupInput();
 
-                // Start render loop
-                this.render();
-                setInterval(() => this.render(), 1000 / 60);
+                // Start render loop - using requestAnimationFrame for smooth 60fps
+                this.startRenderLoop();
+
+                // Start network sync loop - separate from rendering
+                this.startNetworkLoop();
 
                 // Join the game
                 this.publish(this.sessionId, "playerJoin", { playerId: this.playerId });
@@ -206,22 +402,18 @@
             }
 
             setupInput() {
-                // Mouse movement
+                // Mouse movement - just update target, don't send to network immediately
                 this.canvas.addEventListener('mousemove', (e) => {
+                    // Record input time for latency measurement
+                    this.perfStats.recordInputLatency();
+                    
                     const rect = this.canvas.getBoundingClientRect();
                     this.mousePos.x = e.clientX - rect.left;
                     this.mousePos.y = e.clientY - rect.top;
 
-                    // Convert screen coordinates to world coordinates
-                    const worldX = this.mousePos.x + this.camera.x;
-                    const worldY = this.mousePos.y + this.camera.y;
-
-                    // Send movement to model
-                    this.publish(this.sessionId, "playerMove", {
-                        playerId: this.playerId,
-                        targetX: worldX,
-                        targetY: worldY
-                    });
+                    // Update local target immediately for responsiveness
+                    this.localPlayer.targetX = this.mousePos.x + this.camera.x;
+                    this.localPlayer.targetY = this.mousePos.y + this.camera.y;
                 });
 
                 // Handle window resize
@@ -231,27 +423,96 @@
                 });
             }
 
+            startRenderLoop() {
+                const renderFrame = () => {
+                    this.updateLocalPlayer(); // Update local player position
+                    this.render(); // Render everything
+                    requestAnimationFrame(renderFrame);
+                };
+                renderFrame();
+            }
+
+            startNetworkLoop() {
+                setInterval(() => {
+                    this.sendNetworkUpdate();
+                }, this.networkSyncInterval);
+            }
+
+            updateLocalPlayer() {
+                // Smooth movement towards mouse target (client-side prediction)
+                const dx = this.localPlayer.targetX - this.localPlayer.x;
+                const dy = this.localPlayer.targetY - this.localPlayer.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > 2) {
+                    const moveSpeed = Math.max(1, 5 - this.localPlayer.size * 0.1);
+                    this.localPlayer.x += (dx / distance) * moveSpeed;
+                    this.localPlayer.y += (dy / distance) * moveSpeed;
+
+                    // Keep player in bounds
+                    this.localPlayer.x = Math.max(this.localPlayer.size, Math.min(WORLD_WIDTH - this.localPlayer.size, this.localPlayer.x));
+                    this.localPlayer.y = Math.max(this.localPlayer.size, Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y));
+                }
+
+                // Update camera to follow local player
+                this.camera.x = this.localPlayer.x - CANVAS_WIDTH / 2;
+                this.camera.y = this.localPlayer.y - CANVAS_HEIGHT / 2;
+                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - CANVAS_WIDTH, this.camera.x));
+                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - CANVAS_HEIGHT, this.camera.y));
+            }
+
+            sendNetworkUpdate() {
+                // Only send network updates periodically, not on every frame
+                const now = Date.now();
+                if (now - this.lastNetworkSync >= this.networkSyncInterval) {
+                    this.lastNetworkSync = now;
+                    
+                    // Send current position and target to server
+                    this.publish(this.sessionId, "playerMove", {
+                        playerId: this.playerId,
+                        x: this.localPlayer.x,
+                        y: this.localPlayer.y,
+                        targetX: this.localPlayer.targetX,
+                        targetY: this.localPlayer.targetY
+                    });
+                }
+            }
+
             updateGameState(state) {
+                // Update other players with server data
                 this.gameState = state;
 
-                // Update UI
-                const myPlayer = state.players.find(p => p.id === this.playerId);
-                if (myPlayer) {
-                    document.getElementById('sizeDisplay').textContent = Math.floor(myPlayer.size);
+                // Find our player in server data and reconcile if needed
+                const serverPlayer = state.players.find(p => p.id === this.playerId);
+                if (serverPlayer) {
+                    // Simple reconciliation - if too far from server, adjust
+                    const dx = serverPlayer.x - this.localPlayer.x;
+                    const dy = serverPlayer.y - this.localPlayer.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > 50) { // If too far from server position, snap back
+                        this.localPlayer.x = serverPlayer.x;
+                        this.localPlayer.y = serverPlayer.y;
+                    }
 
-                    // Update camera to follow player
-                    this.camera.x = myPlayer.x - CANVAS_WIDTH / 2;
-                    this.camera.y = myPlayer.y - CANVAS_HEIGHT / 2;
+                    // Update size from server
+                    this.localPlayer.size = serverPlayer.size;
+                    this.localPlayer.color = serverPlayer.color;
 
-                    // Keep camera in bounds
-                    this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - CANVAS_WIDTH, this.camera.x));
-                    this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - CANVAS_HEIGHT, this.camera.y));
+                    // Update UI
+                    document.getElementById('sizeDisplay').textContent = Math.floor(serverPlayer.size);
                 }
 
                 document.getElementById('playersCount').textContent = state.players.length;
             }
 
             render() {
+                // Start performance measurement
+                this.perfStats.startFrame();
+                
+                // Measure input latency
+                this.perfStats.measureInputLatency();
+
                 // Clear canvas
                 this.ctx.fillStyle = '#90EE90';
                 this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -268,32 +529,45 @@
                     this.ctx.fill();
                 });
 
-                // Draw players
+                // Draw other players (from server data)
                 this.gameState.players.forEach(player => {
-                    // Player body
-                    this.ctx.fillStyle = player.color;
-                    this.ctx.beginPath();
-                    this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-                    this.ctx.fill();
+                    if (player.id !== this.playerId) { // Don't draw our own player from server data
+                        this.ctx.fillStyle = player.color;
+                        this.ctx.beginPath();
+                        this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+                        this.ctx.fill();
 
-                    // Player outline
-                    this.ctx.strokeStyle = '#000';
-                    this.ctx.lineWidth = 2;
-                    this.ctx.stroke();
-
-                    // Highlight own player
-                    if (player.id === this.playerId) {
-                        this.ctx.strokeStyle = '#FFF';
-                        this.ctx.lineWidth = 3;
+                        // Player outline
+                        this.ctx.strokeStyle = '#000';
+                        this.ctx.lineWidth = 2;
                         this.ctx.stroke();
                     }
                 });
+
+                // Draw our own player from local prediction (most responsive)
+                this.ctx.fillStyle = this.localPlayer.color;
+                this.ctx.beginPath();
+                this.ctx.arc(this.localPlayer.x, this.localPlayer.y, this.localPlayer.size, 0, Math.PI * 2);
+                this.ctx.fill();
+
+                // Highlight our own player
+                this.ctx.strokeStyle = '#FFF';
+                this.ctx.lineWidth = 3;
+                this.ctx.stroke();
+
+                // Draw black outline
+                this.ctx.strokeStyle = '#000';
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
 
                 // Restore context
                 this.ctx.restore();
 
                 // Draw grid for reference (optional)
                 this.drawGrid();
+
+                // End performance measurement
+                this.perfStats.endFrame();
             }
 
             drawGrid() {
