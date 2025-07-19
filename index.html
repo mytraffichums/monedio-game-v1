@@ -180,6 +180,9 @@
                 this.players = new Map();
                 this.food = new Map();
                 this.nextFoodId = 0;
+                
+                // Global throttling
+                this.lastGlobalGameStateUpdate = 0;
 
                 // Subscribe to player events
                 this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
@@ -195,8 +198,7 @@
                 // Start server-side movement update loop
                 this.future(50, () => this.updateServerMovement());
 
-                // Start periodic state broadcast
-                this.future(200, () => this.broadcastGameState());
+                // Periodic broadcast removed - game states sent on events only
 
                 console.log("Game model initialized");
             }
@@ -214,7 +216,7 @@
                 });
 
                 console.log("Player joined:", playerId);
-                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                this.publishGameStateThrottled();
             }
 
             handlePlayerMove(data) {
@@ -245,18 +247,13 @@
                     this.checkFoodCollisions(player);
                 }
 
-                // Throttle game state updates to reduce network spam
-                this.lastGameStateUpdate = this.lastGameStateUpdate || 0;
-                const now = Date.now();
-                if (now - this.lastGameStateUpdate > 100) { // Max 10 updates per second
-                    this.lastGameStateUpdate = now;
-                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
-                }
+                // Use global throttled update
+                this.publishGameStateThrottled();
             }
 
             handlePlayerLeave(data) {
                 this.players.delete(data.playerId);
-                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                this.publishGameStateThrottled();
             }
 
             checkFoodCollisions(player) {
@@ -294,7 +291,7 @@
                 // Maintain food count
                 if (this.food.size < 40) {
                     this.spawnFood(5);
-                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                    this.publishGameStateThrottled();
                 }
 
                 // Schedule next spawn
@@ -326,8 +323,16 @@
             }
 
             broadcastGameState() {
-                this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                this.publishGameStateThrottled();
                 this.future(200, () => this.broadcastGameState()); // Broadcast every 200ms
+            }
+
+            publishGameStateThrottled() {
+                const now = Date.now();
+                if (now - this.lastGlobalGameStateUpdate > 200) { // Max 5 updates per second globally
+                    this.lastGlobalGameStateUpdate = now;
+                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
+                }
             }
 
             getGameState() {
@@ -444,8 +449,8 @@
                 const dy = this.localPlayer.targetY - this.localPlayer.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
-                if (distance > 2) {
-                    const moveSpeed = Math.max(1, 5 - this.localPlayer.size * 0.1);
+                if (distance > 1) {
+                    const moveSpeed = Math.max(3, 8 - this.localPlayer.size * 0.1);
                     this.localPlayer.x += (dx / distance) * moveSpeed;
                     this.localPlayer.y += (dy / distance) * moveSpeed;
 
