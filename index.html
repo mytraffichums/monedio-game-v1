@@ -260,24 +260,26 @@
                 const playerId = data.playerId;
                 const player = this.players.get(playerId);
 
-                // Verify the food still exists and player is close enough
+                // Verify the food still exists and player is close enough and big enough
                 if (player && this.food.has(foodId)) {
                     const food = this.food.get(foodId);
                     const dx = player.x - food.x;
                     const dy = player.y - food.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    // Double-check collision on server side
-                    if (distance < player.size + food.size) {
+                    // Double-check collision on server side - distance AND size requirement
+                    if (distance < player.size + food.size && player.size >= food.size) {
                         this.food.delete(foodId);
                         player.size += 1;
 
                         // Spawn new food to replace eaten one
                         this.spawnFood(1);
-                        console.log("Food eaten by player:", playerId, "Food ID:", foodId);
+                        console.log("Food eaten by player:", playerId, "Food ID:", foodId, "Player size:", player.size, "Food size:", food.size);
                         
                         // Send immediate update for food consumption
                         this.publishGameStateThrottled();
+                    } else if (distance < player.size + food.size) {
+                        console.log("Player too small to eat food:", playerId, "Player size:", player.size, "Food size:", food.size);
                     }
                 }
             }
@@ -288,7 +290,8 @@
                     const dy = player.y - food.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance < player.size + food.size) {
+                    // Check if player is close enough AND big enough to eat the logo
+                    if (distance < player.size + food.size && player.size >= food.size) {
                         // Player eats food
                         this.food.delete(foodId);
                         player.size += 1;
@@ -307,8 +310,11 @@
                         id: foodId,
                         x: Math.random() * WORLD_WIDTH,
                         y: Math.random() * WORLD_HEIGHT,
-                        size: 4,
-                        color: this.getRandomFoodColor()
+                        size: 6 + Math.random() * 20, // Varied sizes between 6-26
+                        logoType: this.getRandomLogoType(),
+                        angle: Math.random() * Math.PI * 2, // Random starting angle
+                        rotationSpeed: 0.01 + Math.random() * 0.03, // Random rotation speed
+                        rotationDirection: Math.random() > 0.5 ? 1 : -1 // Random direction
                     });
                 }
             }
@@ -344,6 +350,13 @@
                     }
                 }
 
+                // Update food rotation angles
+                for (let [foodId, food] of this.food.entries()) {
+                    if (food.angle !== undefined && food.rotationSpeed && food.rotationDirection) {
+                        food.angle += food.rotationSpeed * food.rotationDirection;
+                    }
+                }
+
                 // Schedule next update
                 this.future(50).updateServerMovement(); // 20Hz server updates
             }
@@ -368,9 +381,9 @@
                 return colors[Math.floor(Math.random() * colors.length)];
             }
 
-            getRandomFoodColor() {
-                const colors = ['#FF4757', '#5352ED', '#00D2D3', '#FF9F43', '#6C5CE7'];
-                return colors[Math.floor(Math.random() * colors.length)];
+            getRandomLogoType() {
+                const protocols = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
+                return protocols[Math.floor(Math.random() * protocols.length)];
             }
         }
 
@@ -386,6 +399,11 @@
                 // Set canvas size
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
+
+                // Load protocol logos
+                this.protocolLogos = {};
+                this.protocolTypes = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
+                this.loadLogos();
 
                 // Game state
                 this.gameState = { players: [], food: [] };
@@ -442,16 +460,36 @@
                 console.log("Game view initialized, player ID:", this.playerId);
             }
 
+            loadLogos() {
+                this.protocolTypes.forEach(protocol => {
+                    const img = new Image();
+                    img.onload = () => {
+                        console.log(`Loaded ${protocol} logo (${Object.keys(this.protocolLogos).filter(k => this.protocolLogos[k].complete && this.protocolLogos[k].naturalWidth > 0).length}/${this.protocolTypes.length})`);
+                    };
+                    img.onerror = () => {
+                        console.log(`Failed to load ${protocol} logo`);
+                        // Mark as failed so we don't try to draw it
+                        this.protocolLogos[protocol] = null;
+                    };
+                    img.src = `assets/logos/defi/${protocol}.svg`;
+                    this.protocolLogos[protocol] = img;
+                });
+            }
+
             handleResize() {
                 // Update canvas dimensions
                 this.canvas.width = window.innerWidth;
                 this.canvas.height = window.innerHeight;
                 
-                // Recalculate camera position to keep player centered
-                this.camera.x = this.localPlayer.x - window.innerWidth / 2;
-                this.camera.y = this.localPlayer.y - window.innerHeight / 2;
-                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - window.innerWidth, this.camera.x));
-                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - window.innerHeight, this.camera.y));
+                // Recalculate camera position to keep player centered (adjusted for zoom)
+                const zoomScale = 1.12;
+                const effectiveWidth = window.innerWidth / zoomScale;
+                const effectiveHeight = window.innerHeight / zoomScale;
+                
+                this.camera.x = this.localPlayer.x - effectiveWidth / 2;
+                this.camera.y = this.localPlayer.y - effectiveHeight / 2;
+                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x));
+                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y));
                 
                 console.log("Game resized to:", window.innerWidth, "x", window.innerHeight);
             }
@@ -476,9 +514,10 @@
                         this.isDrifting = false; // Exit drift mode when cursor moves
                     }
 
-                    // Update local target immediately for responsiveness
-                    this.localPlayer.targetX = this.mousePos.x + this.camera.x;
-                    this.localPlayer.targetY = this.mousePos.y + this.camera.y;
+                    // Update local target immediately for responsiveness (adjusted for zoom)
+                    const zoomScale = 1.12;
+                    this.localPlayer.targetX = this.mousePos.x / zoomScale + this.camera.x;
+                    this.localPlayer.targetY = this.mousePos.y / zoomScale + this.camera.y;
                 });
 
                 // Handle window resize
@@ -581,11 +620,15 @@
                 // Client-side food collision detection for immediate feedback
                 this.checkLocalFoodCollisions();
 
-                // Update camera to follow local player
-                this.camera.x = this.localPlayer.x - window.innerWidth / 2;
-                this.camera.y = this.localPlayer.y - window.innerHeight / 2;
-                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - window.innerWidth, this.camera.x));
-                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - window.innerHeight, this.camera.y));
+                // Update camera to follow local player (adjusted for zoom)
+                const zoomScale = 1.12;
+                const effectiveWidth = window.innerWidth / zoomScale;
+                const effectiveHeight = window.innerHeight / zoomScale;
+                
+                this.camera.x = this.localPlayer.x - effectiveWidth / 2;
+                this.camera.y = this.localPlayer.y - effectiveHeight / 2;
+                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x));
+                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y));
             }
 
             checkLocalFoodCollisions() {
@@ -596,7 +639,8 @@
                         const dy = this.localPlayer.y - food.y;
                         const distance = Math.sqrt(dx * dx + dy * dy);
 
-                        if (distance < this.localPlayer.size + food.size) {
+                        // Check if player is close enough AND big enough to eat the logo
+                        if (distance < this.localPlayer.size + food.size && this.localPlayer.size >= food.size) {
                             // Predict food is eaten - hide it immediately
                             this.predictedEatenFood.add(food.id);
                             
@@ -686,18 +730,39 @@
                 this.ctx.fillStyle = '#90EE90';
                 this.ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-                // Save context for camera transform
+                // Save context for camera transform and zoom
                 this.ctx.save();
+                this.ctx.scale(1.12, 1.12); // 12% zoom in
                 this.ctx.translate(-this.camera.x, -this.camera.y);
 
-                // Draw food
+                // Draw food (protocol logos)
                 this.gameState.food.forEach(food => {
                     // Skip food that we predict has been eaten
                     if (!this.predictedEatenFood.has(food.id)) {
-                        this.ctx.fillStyle = food.color;
-                        this.ctx.beginPath();
-                        this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
-                        this.ctx.fill();
+                        const logo = this.protocolLogos[food.logoType];
+                        if (logo && logo.complete && logo.naturalWidth > 0) {
+                            // Draw logo centered at food position with rotation
+                            // Logo size can now be larger than players, with reasonable maximum
+                            const logoSize = Math.min(food.size * 1.5, 50); // Max size of 50 for bigger variety
+                            
+                            this.ctx.save();
+                            this.ctx.translate(food.x, food.y);
+                            this.ctx.rotate(food.angle || 0);
+                            this.ctx.drawImage(
+                                logo, 
+                                -logoSize / 2, 
+                                -logoSize / 2, 
+                                logoSize, 
+                                logoSize
+                            );
+                            this.ctx.restore();
+                        } else {
+                            // Fallback to circle if logo not loaded or failed
+                            this.ctx.fillStyle = '#FF6B6B';
+                            this.ctx.beginPath();
+                            this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
+                            this.ctx.fill();
+                        }
                     }
                 });
 
@@ -747,20 +812,23 @@
                 this.ctx.lineWidth = 1;
 
                 const gridSize = 100;
+                const zoomScale = 1.12;
+                const effectiveWidth = window.innerWidth / zoomScale;
+                const effectiveHeight = window.innerHeight / zoomScale;
                 const startX = -(this.camera.x % gridSize);
                 const startY = -(this.camera.y % gridSize);
 
-                for (let x = startX; x < window.innerWidth; x += gridSize) {
+                for (let x = startX; x < effectiveWidth; x += gridSize) {
                     this.ctx.beginPath();
                     this.ctx.moveTo(x, 0);
-                    this.ctx.lineTo(x, window.innerHeight);
+                    this.ctx.lineTo(x, effectiveHeight);
                     this.ctx.stroke();
                 }
 
-                for (let y = startY; y < window.innerHeight; y += gridSize) {
+                for (let y = startY; y < effectiveHeight; y += gridSize) {
                     this.ctx.beginPath();
                     this.ctx.moveTo(0, y);
-                    this.ctx.lineTo(window.innerWidth, y);
+                    this.ctx.lineTo(effectiveWidth, y);
                     this.ctx.stroke();
                 }
             }
