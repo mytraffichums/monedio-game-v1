@@ -399,6 +399,12 @@
                 this.camera = { x: 0, y: 0 };
                 this.mousePos = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
 
+                // Cursor movement tracking for drift behavior
+                this.lastMousePos = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+                this.lastMouseMoveTime = Date.now();
+                this.cursorStillThreshold = 100; // ms - time before entering drift mode
+                this.isDrifting = false;
+
                 // Local food state for client-side prediction
                 this.localFoodState = new Map(); // Track which food items are locally "eaten"
                 this.predictedEatenFood = new Set(); // Food IDs that we predict are eaten
@@ -413,7 +419,9 @@
                     size: 15,
                     color: '#FF6B6B',
                     targetX: 0,
-                    targetY: 0
+                    targetY: 0,
+                    vx: 0, // velocity x
+                    vy: 0  // velocity y
                 };
 
                 // Network sync timing
@@ -445,8 +453,18 @@
                     this.perfStats.recordInputLatency();
                     
                     const rect = this.canvas.getBoundingClientRect();
-                    this.mousePos.x = e.clientX - rect.left;
-                    this.mousePos.y = e.clientY - rect.top;
+                    const newMouseX = e.clientX - rect.left;
+                    const newMouseY = e.clientY - rect.top;
+
+                    // Check if cursor actually moved
+                    if (newMouseX !== this.mousePos.x || newMouseY !== this.mousePos.y) {
+                        this.lastMousePos.x = this.mousePos.x;
+                        this.lastMousePos.y = this.mousePos.y;
+                        this.mousePos.x = newMouseX;
+                        this.mousePos.y = newMouseY;
+                        this.lastMouseMoveTime = Date.now();
+                        this.isDrifting = false; // Exit drift mode when cursor moves
+                    }
 
                     // Update local target immediately for responsiveness
                     this.localPlayer.targetX = this.mousePos.x + this.camera.x;
@@ -476,19 +494,74 @@
             }
 
             updateLocalPlayer() {
-                // Smooth movement towards mouse target (client-side prediction)
-                const dx = this.localPlayer.targetX - this.localPlayer.x;
-                const dy = this.localPlayer.targetY - this.localPlayer.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
+                // Check if cursor has been still long enough to enter drift mode
+                const now = Date.now();
+                const cursorStillTime = now - this.lastMouseMoveTime;
+                const shouldDrift = cursorStillTime > this.cursorStillThreshold;
 
-                if (distance > 1) {
-                    const moveSpeed = Math.max(3, 8 - this.localPlayer.size * 0.1);
-                    this.localPlayer.x += (dx / distance) * moveSpeed;
-                    this.localPlayer.y += (dy / distance) * moveSpeed;
+                // Update drift state
+                if (shouldDrift && !this.isDrifting) {
+                    this.isDrifting = true;
+                    console.log("Entering drift mode");
+                } else if (!shouldDrift && this.isDrifting) {
+                    this.isDrifting = false;
+                    console.log("Exiting drift mode");
+                }
 
-                    // Keep player in bounds
-                    this.localPlayer.x = Math.max(this.localPlayer.size, Math.min(WORLD_WIDTH - this.localPlayer.size, this.localPlayer.x));
-                    this.localPlayer.y = Math.max(this.localPlayer.size, Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y));
+                // Movement parameters
+                const maxSpeed = Math.max(3, 8 - this.localPlayer.size * 0.1);
+                const acceleration = 0.3; // How quickly we accelerate toward target
+                const normalFriction = 0.92; // Normal friction when near cursor
+                const driftFriction = 0.995; // Much less friction when drifting (loses only 0.5% per frame)
+                const minDriftSpeed = 0.8; // Minimum speed when drifting
+
+                if (this.isDrifting) {
+                    // Drift mode - maintain momentum, apply minimal friction
+                    this.localPlayer.vx *= driftFriction;
+                    this.localPlayer.vy *= driftFriction;
+
+                    // Maintain minimum drift speed
+                    const currentSpeed = Math.sqrt(this.localPlayer.vx * this.localPlayer.vx + this.localPlayer.vy * this.localPlayer.vy);
+                    if (currentSpeed > 0 && currentSpeed < minDriftSpeed) {
+                        const scale = minDriftSpeed / currentSpeed;
+                        this.localPlayer.vx *= scale;
+                        this.localPlayer.vy *= scale;
+                    }
+                } else {
+                    // Normal mode - move toward cursor
+                    const dx = this.localPlayer.targetX - this.localPlayer.x;
+                    const dy = this.localPlayer.targetY - this.localPlayer.y;
+                    const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distanceToTarget > 2) {
+                        // Accelerate toward target
+                        const targetVx = (dx / distanceToTarget) * maxSpeed;
+                        const targetVy = (dy / distanceToTarget) * maxSpeed;
+                        
+                        // Apply acceleration toward target direction
+                        this.localPlayer.vx += (targetVx - this.localPlayer.vx) * acceleration;
+                        this.localPlayer.vy += (targetVy - this.localPlayer.vy) * acceleration;
+                    } else {
+                        // Apply normal friction when close to target
+                        this.localPlayer.vx *= normalFriction;
+                        this.localPlayer.vy *= normalFriction;
+                    }
+                }
+
+                // Update position based on velocity
+                this.localPlayer.x += this.localPlayer.vx;
+                this.localPlayer.y += this.localPlayer.vy;
+
+                // Keep player in bounds
+                this.localPlayer.x = Math.max(this.localPlayer.size, Math.min(WORLD_WIDTH - this.localPlayer.size, this.localPlayer.x));
+                this.localPlayer.y = Math.max(this.localPlayer.size, Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y));
+
+                // Apply velocity damping when hitting boundaries
+                if (this.localPlayer.x <= this.localPlayer.size || this.localPlayer.x >= WORLD_WIDTH - this.localPlayer.size) {
+                    this.localPlayer.vx *= -0.3; // Bounce with reduced velocity
+                }
+                if (this.localPlayer.y <= this.localPlayer.size || this.localPlayer.y >= WORLD_HEIGHT - this.localPlayer.size) {
+                    this.localPlayer.vy *= -0.3; // Bounce with reduced velocity
                 }
 
                 // Client-side food collision detection for immediate feedback
