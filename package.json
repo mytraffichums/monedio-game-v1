@@ -1,0 +1,17 @@
+{
+  "name": "monedio-game-blockchain",
+  "version": "1.0.0",
+  "description": "Secure blockchain score submission for Monedio multiplayer game",
+  "scripts": {
+    "deploy": "node scripts/deploy.js",
+    "backend": "cd backend && npm start",
+    "backend-dev": "cd backend && npm run dev"
+  },
+  "dependencies": {
+    "viem": "^1.19.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+} 

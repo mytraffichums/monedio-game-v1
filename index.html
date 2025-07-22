@@ -152,6 +152,47 @@
         color: #666;
         font-size: 14px;
       }
+
+      #blockchainStatus {
+        margin: 15px 0;
+        padding: 10px;
+        border-radius: 6px;
+        background: #f0f0f0;
+        border: 1px solid #ddd;
+      }
+
+      #blockchainMessage {
+        font-weight: bold;
+        font-size: 14px;
+      }
+
+      #blockchainMessage.success {
+        color: #4CAF50;
+      }
+
+      #blockchainMessage.error {
+        color: #F44336;
+      }
+
+      #blockchainMessage.pending {
+        color: #FF9800;
+      }
+
+      #transactionDetails {
+        margin-top: 8px;
+        font-family: monospace;
+        font-size: 11px;
+        color: #666;
+      }
+
+      #transactionDetails a {
+        color: #2196F3;
+        text-decoration: none;
+      }
+
+      #transactionDetails a:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
 
@@ -175,6 +216,15 @@
       <div id="scoreBoard">
         <h2>Round Complete!</h2>
         <div id="scoreList"></div>
+        <div id="blockchainStatus">
+          <div id="blockchainMessage">⏳ Submitting scores to blockchain...</div>
+          <div id="transactionDetails" style="display: none;">
+            <small>
+              <div>Transaction: <span id="txHash">-</span></div>
+              <div>Block: <span id="blockNumber">-</span></div>
+            </small>
+          </div>
+        </div>
         <div id="nextRoundCountdown">Next round starts in <span id="countdownTimer">10</span> seconds</div>
       </div>
     </div>
@@ -311,7 +361,7 @@
 
           // Round state
           this.currentRound = 1;
-          this.roundDuration = 1 * 60 * 1000; // 5 minutes in milliseconds
+          this.roundDuration = 15 * 1000; // 15 seconds in milliseconds
           this.roundStartTime = this.now();
           this.roundEndTime = this.roundStartTime + this.roundDuration;
           this.isRoundActive = true;
@@ -594,8 +644,72 @@
             });
           }
 
+          // Submit scores to blockchain backend
+          this.submitScoresToBlockchain();
+
           // Broadcast round end with scores
           this.publishRoundUpdate();
+        }
+
+        async submitScoresToBlockchain() {
+          try {
+            // Only submit if there are scores to submit
+            if (this.roundScores.size === 0) {
+              console.log("No scores to submit");
+              return;
+            }
+
+            const scoreData = {
+              sessionId: this.sessionId,
+              roundNumber: this.currentRound,
+              scores: Array.from(this.roundScores.values()).map(score => ({
+                playerId: score.playerId,
+                score: score.score
+              }))
+            };
+
+            console.log("Submitting scores to blockchain:", scoreData);
+
+            // Submit to backend (adjust URL as needed)
+            const backendUrl = "http://localhost:3001";
+            const response = await fetch(`${backendUrl}/api/submit-scores`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(scoreData)
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              console.log("Scores successfully submitted to blockchain:", result);
+              
+              // Broadcast blockchain submission status to clients
+              this.publish(this.sessionId, "blockchainSubmission", {
+                success: true,
+                transactionHash: result.transactionHash,
+                blockNumber: result.blockNumber,
+                playerCount: result.playerCount
+              });
+            } else {
+              const error = await response.json();
+              console.error("Failed to submit scores:", error);
+              
+              // Broadcast failure to clients
+              this.publish(this.sessionId, "blockchainSubmission", {
+                success: false,
+                error: error.error || "Failed to submit to blockchain"
+              });
+            }
+          } catch (error) {
+            console.error("Error submitting scores to blockchain:", error);
+            
+            // Broadcast network error to clients
+            this.publish(this.sessionId, "blockchainSubmission", {
+              success: false,
+              error: "Network error while submitting to blockchain"
+            });
+          }
         }
 
         startNewRound() {
@@ -830,6 +944,11 @@
           // Subscribe to round updates
           this.subscribe(this.sessionId, "roundUpdate", (roundState) =>
             this.updateRoundState(roundState)
+          );
+
+          // Subscribe to blockchain submission updates
+          this.subscribe(this.sessionId, "blockchainSubmission", (status) =>
+            this.updateBlockchainStatus(status)
           );
 
           // Setup input
@@ -1346,6 +1465,41 @@
           };
           
           updateCountdown();
+        }
+
+        updateBlockchainStatus(status) {
+          const messageElement = document.getElementById("blockchainMessage");
+          const detailsElement = document.getElementById("transactionDetails");
+          const txHashElement = document.getElementById("txHash");
+          const blockNumberElement = document.getElementById("blockNumber");
+
+          // Reset classes
+          messageElement.classList.remove("success", "error", "pending");
+
+          if (status.success) {
+            messageElement.textContent = "✅ Scores saved to blockchain!";
+            messageElement.classList.add("success");
+            
+            // Show transaction details
+            if (status.transactionHash) {
+              const shortHash = `${status.transactionHash.slice(0, 8)}...${status.transactionHash.slice(-6)}`;
+              txHashElement.innerHTML = `<a href="https://testnet-explorer.monad.xyz/tx/${status.transactionHash}" target="_blank">${shortHash}</a>`;
+            }
+            
+            if (status.blockNumber) {
+              blockNumberElement.textContent = status.blockNumber.toString();
+            }
+            
+            detailsElement.style.display = "block";
+          } else {
+            messageElement.textContent = "❌ Failed to submit scores";
+            messageElement.classList.add("error");
+            detailsElement.style.display = "none";
+            
+            if (status.error) {
+              console.error("Blockchain submission error:", status.error);
+            }
+          }
         }
 
         render() {
