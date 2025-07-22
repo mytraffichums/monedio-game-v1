@@ -85,6 +85,73 @@
         border-radius: 4px;
         font-family: "Courier New", monospace;
       }
+
+      #scoreOverlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+
+      #scoreBoard {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        max-width: 400px;
+        width: 90%;
+      }
+
+      #scoreBoard h2 {
+        margin: 0 0 20px 0;
+        color: #333;
+        font-size: 28px;
+      }
+
+      .score-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #eee;
+      }
+
+      .score-item:last-child {
+        border-bottom: none;
+      }
+
+      .player-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 10px;
+        border: 2px solid #333;
+      }
+
+      .player-info {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+
+      .score-value {
+        font-weight: bold;
+        font-size: 18px;
+        color: #333;
+      }
+
+      #nextRoundCountdown {
+        margin-top: 20px;
+        color: #666;
+        font-size: 14px;
+      }
     </style>
   </head>
 
@@ -92,6 +159,8 @@
     <div id="ui">
       <div>Size: <span id="sizeDisplay">10</span></div>
       <div>Players: <span id="playersCount">1</span></div>
+      <div>Round: <span id="roundDisplay">1</span></div>
+      <div>Time: <span id="timeDisplay">5:00</span></div>
     </div>
     <div id="perfStats">
       <div>FPS: <span id="fpsDisplay">--</span></div>
@@ -100,6 +169,16 @@
       <div>Min/Max: <span id="minMaxDisplay">--/--</span>ms</div>
       <div>Latency: <span id="latencyDisplay">--</span>ms</div>
     </div>
+
+    <!-- Score Overlay -->
+    <div id="scoreOverlay">
+      <div id="scoreBoard">
+        <h2>Round Complete!</h2>
+        <div id="scoreList"></div>
+        <div id="nextRoundCountdown">Next round starts in <span id="countdownTimer">10</span> seconds</div>
+      </div>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
 
     <script>
@@ -230,6 +309,16 @@
           this.nextFoodId = 0;
           this.nextIslandId = 0;
 
+          // Round state
+          this.currentRound = 1;
+          this.roundDuration = 1 * 60 * 1000; // 5 minutes in milliseconds
+          this.roundStartTime = this.now();
+          this.roundEndTime = this.roundStartTime + this.roundDuration;
+          this.isRoundActive = true;
+          this.roundScores = new Map();
+          this.showingScores = false;
+          this.scoreDisplayDuration = 10 * 1000; // Show scores for 10 seconds
+
           // Global throttling
           this.lastGlobalGameStateUpdate = 0;
 
@@ -248,6 +337,9 @@
 
           // Start server-side movement update loop
           this.future(50).updateServerMovement();
+
+          // Start round timer loop
+          this.future(1000).roundTimerLoop();
 
           // Periodic broadcast removed - game states sent on events only
 
@@ -467,6 +559,93 @@
           this.future(50).updateServerMovement(); // 20Hz server updates
         }
 
+        roundTimerLoop() {
+          const now = this.now();
+          
+          if (this.isRoundActive) {
+            // Check if round should end
+            if (now >= this.roundEndTime) {
+              this.endRound();
+            }
+          } else if (this.showingScores) {
+            // Check if score display should end and start new round
+            if (now >= this.scoreEndTime) {
+              this.startNewRound();
+            }
+          }
+
+          // Continue the timer loop
+          this.future(1000).roundTimerLoop();
+        }
+
+        endRound() {
+          console.log("Round", this.currentRound, "ended");
+          this.isRoundActive = false;
+          this.showingScores = true;
+          this.scoreEndTime = this.now() + this.scoreDisplayDuration;
+
+          // Calculate and store final scores
+          this.roundScores.clear();
+          for (let [playerId, player] of this.players.entries()) {
+            this.roundScores.set(playerId, {
+              playerId: playerId,
+              score: Math.floor(player.size),
+              color: player.color
+            });
+          }
+
+          // Broadcast round end with scores
+          this.publishRoundUpdate();
+        }
+
+        startNewRound() {
+          console.log("Starting round", this.currentRound + 1);
+          this.currentRound++;
+          this.roundStartTime = this.now();
+          this.roundEndTime = this.roundStartTime + this.roundDuration;
+          this.isRoundActive = true;
+          this.showingScores = false;
+          this.roundScores.clear();
+
+          // Reset all players to starting size and random positions
+          for (let [playerId, player] of this.players.entries()) {
+            player.size = 15;
+            player.x = Math.random() * WORLD_WIDTH;
+            player.y = Math.random() * WORLD_HEIGHT;
+            player.targetX = player.x;
+            player.targetY = player.y;
+          }
+
+          // Clear and respawn food
+          this.food.clear();
+          this.nextFoodId = 0;
+          this.spawnFood(50);
+
+          // Broadcast new round start
+          this.publishRoundUpdate();
+        }
+
+        publishRoundUpdate() {
+          const roundState = this.getRoundState();
+          this.publish(this.sessionId, "roundUpdate", roundState);
+          // Also send game state update
+          this.publishGameStateThrottled();
+        }
+
+        getRoundState() {
+          const now = this.now();
+          const timeRemaining = this.isRoundActive ? 
+            Math.max(0, this.roundEndTime - now) : 0;
+          
+          return {
+            currentRound: this.currentRound,
+            timeRemaining: timeRemaining,
+            isRoundActive: this.isRoundActive,
+            showingScores: this.showingScores,
+            scores: Array.from(this.roundScores.values()).sort((a, b) => b.score - a.score)
+          };
+        }
+
         checkServerIslandCollisions(player) {
           // Server-side island collision detection
           for (let [islandId, island] of this.islands.entries()) {
@@ -515,6 +694,7 @@
             players: Array.from(this.players.values()),
             food: Array.from(this.food.values()),
             islands: Array.from(this.islands.values()),
+            round: this.getRoundState()
           };
         }
 
@@ -593,6 +773,13 @@
 
           // Game state
           this.gameState = { players: [], food: [], islands: [] };
+          this.roundState = {
+            currentRound: 1,
+            timeRemaining: 5 * 60 * 1000,
+            isRoundActive: true,
+            showingScores: false,
+            scores: []
+          };
           this.camera = { x: 0, y: 0 };
           this.mousePos = {
             x: window.innerWidth / 2,
@@ -615,6 +802,10 @@
           // Initialize performance stats
           this.perfStats = new PerformanceStats();
 
+          // Countdown timer tracking
+          this.countdownTimer = null;
+          this.isCountdownRunning = false;
+
           // Client-side prediction state
           this.localPlayer = {
             x: Math.random() * WORLD_WIDTH,
@@ -634,6 +825,11 @@
           // Subscribe to game updates
           this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
             this.updateGameState(state)
+          );
+
+          // Subscribe to round updates
+          this.subscribe(this.sessionId, "roundUpdate", (roundState) =>
+            this.updateRoundState(roundState)
           );
 
           // Setup input
@@ -1016,6 +1212,11 @@
           // Update other players with server data
           this.gameState = state;
 
+          // Update round state if included
+          if (state.round) {
+            this.updateRoundState(state.round);
+          }
+
           // Find our player in server data and reconcile if needed
           const serverPlayer = state.players.find(
             (p) => p.id === this.playerId
@@ -1044,6 +1245,107 @@
 
           document.getElementById("playersCount").textContent =
             state.players.length;
+        }
+
+        updateRoundState(roundState) {
+          const previousRound = this.roundState.currentRound;
+          this.roundState = roundState;
+
+          // Check if a new round started
+          if (roundState.currentRound > previousRound && roundState.isRoundActive) {
+            // New round started - reset local player state
+            this.localPlayer.size = 15;
+            this.localPlayer.x = Math.random() * WORLD_WIDTH;
+            this.localPlayer.y = Math.random() * WORLD_HEIGHT;
+            this.localPlayer.targetX = this.localPlayer.x;
+            this.localPlayer.targetY = this.localPlayer.y;
+            this.localPlayer.vx = 0;
+            this.localPlayer.vy = 0;
+
+            // Reset predicted food state
+            this.predictedEatenFood.clear();
+            
+            console.log("Client reset for new round:", roundState.currentRound);
+          }
+
+          // Update round UI
+          document.getElementById("roundDisplay").textContent = roundState.currentRound;
+          
+          // Update timer display
+          const minutes = Math.floor(roundState.timeRemaining / 60000);
+          const seconds = Math.floor((roundState.timeRemaining % 60000) / 1000);
+          document.getElementById("timeDisplay").textContent = 
+            `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+          // Show/hide score overlay
+          const scoreOverlay = document.getElementById("scoreOverlay");
+          if (roundState.showingScores) {
+            this.showScoreBoard(roundState.scores);
+            scoreOverlay.style.display = "flex";
+          } else {
+            scoreOverlay.style.display = "none";
+            // Reset countdown when hiding scores (new round started)
+            this.isCountdownRunning = false;
+            if (this.countdownTimer) {
+              clearTimeout(this.countdownTimer);
+              this.countdownTimer = null;
+            }
+          }
+        }
+
+        showScoreBoard(scores) {
+          const scoreList = document.getElementById("scoreList");
+          scoreList.innerHTML = "";
+
+          scores.forEach((score, index) => {
+            const scoreItem = document.createElement("div");
+            scoreItem.className = "score-item";
+            
+            const rank = index + 1;
+            const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+            
+            scoreItem.innerHTML = `
+              <div class="player-info">
+                ${medal}
+                <div class="player-color" style="background-color: ${score.color}"></div>
+                <span>Player ${score.playerId.slice(-4)}</span>
+              </div>
+              <div class="score-value">${score.score}</div>
+            `;
+            
+            scoreList.appendChild(scoreItem);
+          });
+
+          // Start countdown timer for next round (only if not already running)
+          if (!this.isCountdownRunning) {
+            this.startCountdownTimer();
+          }
+        }
+
+        startCountdownTimer() {
+          // Clear any existing countdown timer
+          if (this.countdownTimer) {
+            clearTimeout(this.countdownTimer);
+          }
+          
+          this.isCountdownRunning = true;
+          const countdownElement = document.getElementById("countdownTimer");
+          let countdown = 10;
+          
+          const updateCountdown = () => {
+            countdownElement.textContent = countdown;
+            countdown--;
+            
+            if (countdown >= 0) {
+              this.countdownTimer = setTimeout(updateCountdown, 1000);
+            } else {
+              // Countdown finished
+              this.isCountdownRunning = false;
+              this.countdownTimer = null;
+            }
+          };
+          
+          updateCountdown();
         }
 
         render() {
