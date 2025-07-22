@@ -177,7 +177,9 @@
                 // Game state
                 this.players = new Map();
                 this.food = new Map();
+                this.islands = new Map();
                 this.nextFoodId = 0;
+                this.nextIslandId = 0;
                 
                 // Global throttling
                 this.lastGlobalGameStateUpdate = 0;
@@ -188,8 +190,9 @@
                 this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
                 this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
 
-                // Spawn initial food
+                // Spawn initial food and islands
                 this.spawnFood(50);
+                this.spawnIslands(4); // Add 4 islands to start
 
                 // Start food spawning loop
                 this.future(1000).spawnFoodLoop();
@@ -319,6 +322,19 @@
                 }
             }
 
+            spawnIslands(count) {
+                for (let i = 0; i < count; i++) {
+                    const islandId = this.nextIslandId++;
+                    this.islands.set(islandId, {
+                        id: islandId,
+                        x: Math.random() * WORLD_WIDTH,
+                        y: Math.random() * WORLD_HEIGHT,
+                        size: 50 + Math.random() * 60, // Bigger sizes between 50-110
+                        islandType: this.getRandomIslandType() // Random island SVG
+                    });
+                }
+            }
+
             spawnFoodLoop() {
                 // Maintain food count
                 if (this.food.size < 40) {
@@ -346,6 +362,9 @@
                             // Keep player in bounds
                             player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
                             player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
+
+                            // Check island collisions on server side
+                            this.checkServerIslandCollisions(player);
                         }
                     }
                 }
@@ -361,6 +380,30 @@
                 this.future(50).updateServerMovement(); // 20Hz server updates
             }
 
+            checkServerIslandCollisions(player) {
+                // Server-side island collision detection
+                for (let [islandId, island] of this.islands.entries()) {
+                    const dx = player.x - island.x;
+                    const dy = player.y - island.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = player.size + island.size;
+
+                    if (distance < minDistance) {
+                        // Push player out of island
+                        const overlap = minDistance - distance;
+                        const nx = distance > 0 ? dx / distance : 1;
+                        const ny = distance > 0 ? dy / distance : 0;
+
+                        player.x += nx * overlap;
+                        player.y += ny * overlap;
+
+                        // Keep player in bounds after collision adjustment
+                        player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
+                        player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
+                    }
+                }
+            }
+
             publishGameStateThrottled() {
                 const now = this.now();
                 if (now - this.lastGlobalGameStateUpdate > 200) { // Max 5 updates per second globally
@@ -372,7 +415,8 @@
             getGameState() {
                 return {
                     players: Array.from(this.players.values()),
-                    food: Array.from(this.food.values())
+                    food: Array.from(this.food.values()),
+                    islands: Array.from(this.islands.values())
                 };
             }
 
@@ -384,6 +428,11 @@
             getRandomLogoType() {
                 const protocols = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
                 return protocols[Math.floor(Math.random() * protocols.length)];
+            }
+
+            getRandomIslandType() {
+                const islands = ['island1', 'island2', 'island3', 'island4', 'island5'];
+                return islands[Math.floor(Math.random() * islands.length)];
             }
         }
 
@@ -405,8 +454,13 @@
                 this.protocolTypes = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
                 this.loadLogos();
 
+                // Load island SVGs
+                this.islandLogos = {};
+                this.islandTypes = ['island1', 'island2', 'island3', 'island4', 'island5'];
+                this.loadIslandLogos();
+
                 // Game state
-                this.gameState = { players: [], food: [] };
+                this.gameState = { players: [], food: [], islands: [] };
                 this.camera = { x: 0, y: 0 };
                 this.mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
@@ -473,6 +527,22 @@
                     };
                     img.src = `assets/logos/defi/${protocol}.svg`;
                     this.protocolLogos[protocol] = img;
+                });
+            }
+
+            loadIslandLogos() {
+                this.islandTypes.forEach(islandType => {
+                    const img = new Image();
+                    img.onload = () => {
+                        console.log(`Loaded ${islandType} island (${Object.keys(this.islandLogos).filter(k => this.islandLogos[k].complete && this.islandLogos[k].naturalWidth > 0).length}/${this.islandTypes.length})`);
+                    };
+                    img.onerror = () => {
+                        console.log(`Failed to load ${islandType} island`);
+                        // Mark as failed so we don't try to draw it
+                        this.islandLogos[islandType] = null;
+                    };
+                    img.src = `assets/islands/${islandType}.svg`;
+                    this.islandLogos[islandType] = img;
                 });
             }
 
@@ -620,6 +690,9 @@
                 // Client-side food collision detection for immediate feedback
                 this.checkLocalFoodCollisions();
 
+                // Check island collisions and handle bouncing
+                this.checkIslandCollisions();
+
                 // Update camera to follow local player (adjusted for zoom)
                 const zoomScale = 1.12;
                 const effectiveWidth = window.innerWidth / zoomScale;
@@ -657,6 +730,43 @@
 
                             console.log("Food eaten locally:", food.id);
                         }
+                    }
+                });
+            }
+
+            checkIslandCollisions() {
+                // Check collisions with islands and apply bounce physics
+                this.gameState.islands.forEach(island => {
+                    const dx = this.localPlayer.x - island.x;
+                    const dy = this.localPlayer.y - island.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const minDistance = this.localPlayer.size + island.size;
+
+                    if (distance < minDistance) {
+                        // Collision detected - calculate bounce
+                        const overlap = minDistance - distance;
+                        
+                        // Normalize the collision vector
+                        const nx = distance > 0 ? dx / distance : 1;
+                        const ny = distance > 0 ? dy / distance : 0;
+
+                        // Move player out of collision
+                        this.localPlayer.x += nx * overlap;
+                        this.localPlayer.y += ny * overlap;
+
+                        // Apply bounce to velocity
+                        const bounceStrength = 0.8;
+                        const velocityAlongNormal = this.localPlayer.vx * nx + this.localPlayer.vy * ny;
+                        
+                        // Only bounce if moving toward the island
+                        if (velocityAlongNormal < 0) {
+                            this.localPlayer.vx -= velocityAlongNormal * nx * (1 + bounceStrength);
+                            this.localPlayer.vy -= velocityAlongNormal * ny * (1 + bounceStrength);
+                        }
+
+                        // Add some friction to the bounce
+                        this.localPlayer.vx *= 0.7;
+                        this.localPlayer.vy *= 0.7;
                     }
                 });
             }
@@ -764,6 +874,35 @@
                             this.ctx.fill();
                         }
                     }
+                });
+
+                // Draw islands with SVGs
+                this.gameState.islands.forEach(island => {
+                    const islandLogo = this.islandLogos[island.islandType];
+                    if (islandLogo && islandLogo.complete && islandLogo.naturalWidth > 0) {
+                        // Draw island SVG
+                        this.ctx.save();
+                        this.ctx.translate(island.x, island.y);
+                        this.ctx.drawImage(
+                            islandLogo,
+                            -island.size,
+                            -island.size,
+                            island.size * 2,
+                            island.size * 2
+                        );
+                        this.ctx.restore();
+                    } else {
+                        // Fallback to black circle if island SVG not loaded or failed
+                        this.ctx.fillStyle = '#2F4F2F';
+                        this.ctx.beginPath();
+                        this.ctx.arc(island.x, island.y, island.size, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+
+                    // Island outline
+                    this.ctx.strokeStyle = '#000';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.stroke();
                 });
 
                 // Draw other players (from server data)
