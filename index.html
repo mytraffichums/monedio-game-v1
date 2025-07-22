@@ -1,1063 +1,1296 @@
 <!DOCTYPE html>
 <html>
-
-<head>
-    <meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
     <title>Monedio</title>
     <script src="https://cdn.jsdelivr.net/npm/@multisynq/client@latest/bundled/multisynq-client.min.js"></script>
+    <script type="module">
+      import { createClient, monadTestnet } from "https://esm.sh/viem";
+
+      let viemClient = null;
+
+      async function initViemClient() {
+        viemClient = createClient({
+          chain: monadTestnet,
+        });
+        window.viemClient = viemClient;
+      }
+
+      window.eatFood = async function () {
+        if (!viemClient) {
+          console.log("Viem client not initialized");
+          return;
+        }
+
+        try {
+          console.log("Calling fake contract for food eaten...");
+          const result = await viemClient.writeContract({
+            address: "0x1234567890123456789012345678901234567890",
+            abi: [
+              {
+                name: "testFunction",
+                type: "function",
+                inputs: [],
+                outputs: [],
+                stateMutability: "nonpayable",
+              },
+            ],
+            functionName: "testFunction",
+          });
+        } catch (writeError) {
+          console.log(
+            "Fake contract call error (expected):",
+            writeError.message
+          );
+        }
+      };
+
+      window.addEventListener("load", () => {
+        setTimeout(initViemClient, 1000);
+      });
+    </script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #87CEEB;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #87ceeb;
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+      }
 
-        #gameCanvas {
-            display: block;
-            background: #90EE90;
-            cursor: none;
-        }
+      #gameCanvas {
+        display: block;
+        background: #90ee90;
+        cursor: none;
+      }
 
-        #ui {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-size: 18px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-        }
+      #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        font-size: 18px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+      }
 
-        #perfStats {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            color: white;
-            font-size: 14px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 8px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-        }
+      #perfStats {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        color: white;
+        font-size: 14px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
+        padding: 8px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
     <div id="ui">
-        <div>Size: <span id="sizeDisplay">10</span></div>
-        <div>Players: <span id="playersCount">1</span></div>
+      <div>Size: <span id="sizeDisplay">10</span></div>
+      <div>Players: <span id="playersCount">1</span></div>
     </div>
     <div id="perfStats">
-        <div>FPS: <span id="fpsDisplay">--</span></div>
-        <div>Frame: <span id="frameTimeDisplay">--</span>ms</div>
-        <div>Avg: <span id="avgFrameDisplay">--</span>ms</div>
-        <div>Min/Max: <span id="minMaxDisplay">--/--</span>ms</div>
-        <div>Latency: <span id="latencyDisplay">--</span>ms</div>
+      <div>FPS: <span id="fpsDisplay">--</span></div>
+      <div>Frame: <span id="frameTimeDisplay">--</span>ms</div>
+      <div>Avg: <span id="avgFrameDisplay">--</span>ms</div>
+      <div>Min/Max: <span id="minMaxDisplay">--/--</span>ms</div>
+      <div>Latency: <span id="latencyDisplay">--</span>ms</div>
     </div>
     <canvas id="gameCanvas"></canvas>
 
     <script>
-        const API_KEY = "2GzxJfKu10qeIJcl0FsTY5AbhgXQj2ZgaXJhm6jHbK";
-        const WORLD_WIDTH = 2000;
-        const WORLD_HEIGHT = 2000;
+      const API_KEY = "2GzxJfKu10qeIJcl0FsTY5AbhgXQj2ZgaXJhm6jHbK";
+      const WORLD_WIDTH = 2000;
+      const WORLD_HEIGHT = 2000;
 
-        // Performance Stats Class
-        class PerformanceStats {
-            constructor() {
-                this.frameCount = 0;
-                this.lastTime = performance.now();
-                this.frameStartTime = performance.now();
-                this.frameTimes = [];
-                this.maxSamples = 60; // Keep last 60 frame times
-                this.lastFpsUpdate = 0;
-                this.fps = 0;
-                this.avgFrameTime = 0;
-                this.minFrameTime = Infinity;
-                this.maxFrameTime = 0;
-                this.inputLatency = 0;
-                this.lastInputTime = 0;
+      // Performance Stats Class
+      class PerformanceStats {
+        constructor() {
+          this.frameCount = 0;
+          this.lastTime = performance.now();
+          this.frameStartTime = performance.now();
+          this.frameTimes = [];
+          this.maxSamples = 60; // Keep last 60 frame times
+          this.lastFpsUpdate = 0;
+          this.fps = 0;
+          this.avgFrameTime = 0;
+          this.minFrameTime = Infinity;
+          this.maxFrameTime = 0;
+          this.inputLatency = 0;
+          this.lastInputTime = 0;
 
-                // DOM elements
-                this.fpsDisplay = document.getElementById('fpsDisplay');
-                this.frameTimeDisplay = document.getElementById('frameTimeDisplay');
-                this.avgFrameDisplay = document.getElementById('avgFrameDisplay');
-                this.minMaxDisplay = document.getElementById('minMaxDisplay');
-                this.latencyDisplay = document.getElementById('latencyDisplay');
-            }
-
-            startFrame() {
-                this.frameStartTime = performance.now();
-            }
-
-            endFrame() {
-                const now = performance.now();
-                const frameTime = now - this.frameStartTime;
-                
-                // Add frame time to our sample array
-                this.frameTimes.push(frameTime);
-                if (this.frameTimes.length > this.maxSamples) {
-                    this.frameTimes.shift();
-                }
-
-                // Update min/max
-                this.minFrameTime = Math.min(this.minFrameTime, frameTime);
-                this.maxFrameTime = Math.max(this.maxFrameTime, frameTime);
-
-                this.frameCount++;
-
-                // Update FPS and stats every 250ms
-                if (now - this.lastFpsUpdate > 250) {
-                    this.updateStats(now);
-                    this.lastFpsUpdate = now;
-                }
-            }
-
-            updateStats(now) {
-                // Calculate FPS
-                const timeDelta = now - this.lastTime;
-                if (timeDelta > 0) {
-                    this.fps = Math.round((this.frameCount * 1000) / timeDelta);
-                }
-
-                // Calculate average frame time
-                if (this.frameTimes.length > 0) {
-                    this.avgFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
-                }
-
-                // Reset counters
-                this.frameCount = 0;
-                this.lastTime = now;
-
-                // Update UI
-                this.updateDisplay();
-            }
-
-            updateDisplay() {
-                this.fpsDisplay.textContent = this.fps;
-                this.frameTimeDisplay.textContent = this.frameTimes.length > 0 ? 
-                    this.frameTimes[this.frameTimes.length - 1].toFixed(1) : '--';
-                this.avgFrameDisplay.textContent = this.avgFrameTime.toFixed(1);
-                this.minMaxDisplay.textContent = 
-                    `${this.minFrameTime === Infinity ? '--' : this.minFrameTime.toFixed(1)}/${this.maxFrameTime.toFixed(1)}`;
-                this.latencyDisplay.textContent = this.inputLatency.toFixed(1);
-
-                // Color code FPS based on performance
-                if (this.fps >= 55) {
-                    this.fpsDisplay.style.color = '#4CAF50'; // Green
-                } else if (this.fps >= 30) {
-                    this.fpsDisplay.style.color = '#FF9800'; // Orange  
-                } else {
-                    this.fpsDisplay.style.color = '#F44336'; // Red
-                }
-            }
-
-            recordInputLatency() {
-                this.lastInputTime = performance.now();
-            }
-
-            measureInputLatency() {
-                if (this.lastInputTime > 0) {
-                    this.inputLatency = performance.now() - this.lastInputTime;
-                    this.lastInputTime = 0;
-                }
-            }
-
-            reset() {
-                this.minFrameTime = Infinity;
-                this.maxFrameTime = 0;
-                this.frameTimes = [];
-            }
+          // DOM elements
+          this.fpsDisplay = document.getElementById("fpsDisplay");
+          this.frameTimeDisplay = document.getElementById("frameTimeDisplay");
+          this.avgFrameDisplay = document.getElementById("avgFrameDisplay");
+          this.minMaxDisplay = document.getElementById("minMaxDisplay");
+          this.latencyDisplay = document.getElementById("latencyDisplay");
         }
 
-        // Game Model - handles all game logic and state
-        class MopeGameModel extends Multisynq.Model {
-            init() {
-                // Game state
-                this.players = new Map();
-                this.food = new Map();
-                this.islands = new Map();
-                this.nextFoodId = 0;
-                this.nextIslandId = 0;
-                
-                // Global throttling
-                this.lastGlobalGameStateUpdate = 0;
-
-                // Subscribe to player events
-                this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
-                this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
-                this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
-                this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
-
-                // Spawn initial food and islands
-                this.spawnFood(50);
-                this.spawnIslands(4); // Add 4 islands to start
-
-                // Start food spawning loop
-                this.future(1000).spawnFoodLoop();
-
-                // Start server-side movement update loop
-                this.future(50).updateServerMovement();
-
-                // Periodic broadcast removed - game states sent on events only
-
-                console.log("Game model initialized");
-            }
-
-            handlePlayerJoin(data) {
-                const playerId = data.playerId;
-                this.players.set(playerId, {
-                    id: playerId,
-                    x: Math.random() * WORLD_WIDTH,
-                    y: Math.random() * WORLD_HEIGHT,
-                    targetX: Math.random() * WORLD_WIDTH,
-                    targetY: Math.random() * WORLD_HEIGHT,
-                    size: 15,
-                    color: this.getRandomColor()
-                });
-
-                console.log("Player joined:", playerId);
-                this.publishGameStateThrottled();
-            }
-
-            handlePlayerMove(data) {
-                const player = this.players.get(data.playerId);
-                if (player) {
-                    // Use client's predicted position if reasonable, otherwise interpolate
-                    if (data.x && data.y) {
-                        const dx = data.x - player.x;
-                        const dy = data.y - player.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        
-                        // If client position is reasonable, use it
-                        if (distance < 100) {
-                            player.x = data.x;
-                            player.y = data.y;
-                        }
-                    }
-
-                    // Store target for server-side movement
-                    player.targetX = data.targetX;
-                    player.targetY = data.targetY;
-
-                    // Keep player in bounds
-                    player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
-                    player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
-
-                    // Check food collisions
-                    this.checkFoodCollisions(player);
-                }
-
-                // Use global throttled update
-                this.publishGameStateThrottled();
-            }
-
-            handlePlayerLeave(data) {
-                this.players.delete(data.playerId);
-                this.publishGameStateThrottled();
-            }
-
-            handleFoodEaten(data) {
-                const foodId = data.foodId;
-                const playerId = data.playerId;
-                const player = this.players.get(playerId);
-
-                // Verify the food still exists and player is close enough and big enough
-                if (player && this.food.has(foodId)) {
-                    const food = this.food.get(foodId);
-                    const dx = player.x - food.x;
-                    const dy = player.y - food.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    // Double-check collision on server side - distance AND size requirement
-                    if (distance < player.size + food.size && player.size >= food.size) {
-                        this.food.delete(foodId);
-                        player.size += 1;
-
-                        // Spawn new food to replace eaten one
-                        this.spawnFood(1);
-                        console.log("Food eaten by player:", playerId, "Food ID:", foodId, "Player size:", player.size, "Food size:", food.size);
-                        
-                        // Send immediate update for food consumption
-                        this.publishGameStateThrottled();
-                    } else if (distance < player.size + food.size) {
-                        console.log("Player too small to eat food:", playerId, "Player size:", player.size, "Food size:", food.size);
-                    }
-                }
-            }
-
-            checkFoodCollisions(player) {
-                for (let [foodId, food] of this.food.entries()) {
-                    const dx = player.x - food.x;
-                    const dy = player.y - food.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    // Check if player is close enough AND big enough to eat the logo
-                    if (distance < player.size + food.size && player.size >= food.size) {
-                        // Player eats food
-                        this.food.delete(foodId);
-                        player.size += 1;
-
-                        // Spawn new food to replace eaten one
-                        this.spawnFood(1);
-                        break;
-                    }
-                }
-            }
-
-            spawnFood(count) {
-                for (let i = 0; i < count; i++) {
-                    const foodId = this.nextFoodId++;
-                    this.food.set(foodId, {
-                        id: foodId,
-                        x: Math.random() * WORLD_WIDTH,
-                        y: Math.random() * WORLD_HEIGHT,
-                        size: 6 + Math.random() * 20, // Varied sizes between 6-26
-                        logoType: this.getRandomLogoType(),
-                        angle: Math.random() * Math.PI * 2, // Random starting angle
-                        rotationSpeed: 0.01 + Math.random() * 0.03, // Random rotation speed
-                        rotationDirection: Math.random() > 0.5 ? 1 : -1 // Random direction
-                    });
-                }
-            }
-
-            spawnIslands(count) {
-                for (let i = 0; i < count; i++) {
-                    const islandId = this.nextIslandId++;
-                    this.islands.set(islandId, {
-                        id: islandId,
-                        x: Math.random() * WORLD_WIDTH,
-                        y: Math.random() * WORLD_HEIGHT,
-                        size: 50 + Math.random() * 60, // Bigger sizes between 50-110
-                        islandType: this.getRandomIslandType() // Random island SVG
-                    });
-                }
-            }
-
-            spawnFoodLoop() {
-                // Maintain food count
-                if (this.food.size < 40) {
-                    this.spawnFood(5);
-                    this.publishGameStateThrottled();
-                }
-
-                // Schedule next spawn
-                this.future(2000).spawnFoodLoop();
-            }
-
-            updateServerMovement() {
-                // Update all players' positions on server-side
-                for (let [playerId, player] of this.players.entries()) {
-                    if (player.targetX !== undefined && player.targetY !== undefined) {
-                        const dx = player.targetX - player.x;
-                        const dy = player.targetY - player.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-
-                        if (distance > 2) {
-                            const moveSpeed = Math.max(1, 5 - player.size * 0.1);
-                            player.x += (dx / distance) * moveSpeed * 0.5; // Slower server movement
-                            player.y += (dy / distance) * moveSpeed * 0.5;
-
-                            // Keep player in bounds
-                            player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
-                            player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
-
-                            // Check island collisions on server side
-                            this.checkServerIslandCollisions(player);
-                        }
-                    }
-                }
-
-                // Update food rotation angles
-                for (let [foodId, food] of this.food.entries()) {
-                    if (food.angle !== undefined && food.rotationSpeed && food.rotationDirection) {
-                        food.angle += food.rotationSpeed * food.rotationDirection;
-                    }
-                }
-
-                // Schedule next update
-                this.future(50).updateServerMovement(); // 20Hz server updates
-            }
-
-            checkServerIslandCollisions(player) {
-                // Server-side island collision detection
-                for (let [islandId, island] of this.islands.entries()) {
-                    const dx = player.x - island.x;
-                    const dy = player.y - island.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    const minDistance = player.size + island.size;
-
-                    if (distance < minDistance) {
-                        // Push player out of island
-                        const overlap = minDistance - distance;
-                        const nx = distance > 0 ? dx / distance : 1;
-                        const ny = distance > 0 ? dy / distance : 0;
-
-                        player.x += nx * overlap;
-                        player.y += ny * overlap;
-
-                        // Keep player in bounds after collision adjustment
-                        player.x = Math.max(player.size, Math.min(WORLD_WIDTH - player.size, player.x));
-                        player.y = Math.max(player.size, Math.min(WORLD_HEIGHT - player.size, player.y));
-                    }
-                }
-            }
-
-            publishGameStateThrottled() {
-                const now = this.now();
-                if (now - this.lastGlobalGameStateUpdate > 200) { // Max 5 updates per second globally
-                    this.lastGlobalGameStateUpdate = now;
-                    this.publish(this.sessionId, "gameStateUpdate", this.getGameState());
-                }
-            }
-
-            getGameState() {
-                return {
-                    players: Array.from(this.players.values()),
-                    food: Array.from(this.food.values()),
-                    islands: Array.from(this.islands.values())
-                };
-            }
-
-            getRandomColor() {
-                const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FCEA2B', '#FF9FF3'];
-                return colors[Math.floor(Math.random() * colors.length)];
-            }
-
-            getRandomLogoType() {
-                const protocols = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
-                return protocols[Math.floor(Math.random() * protocols.length)];
-            }
-
-            getRandomIslandType() {
-                const islands = ['island1', 'island2', 'island3', 'island4', 'island5'];
-                return islands[Math.floor(Math.random() * islands.length)];
-            }
+        startFrame() {
+          this.frameStartTime = performance.now();
         }
 
-        // Game View - handles rendering and input
-        class MopeGameView extends Multisynq.View {
-            constructor(model) {
-                super(model);
+        endFrame() {
+          const now = performance.now();
+          const frameTime = now - this.frameStartTime;
 
-                this.canvas = document.getElementById('gameCanvas');
-                this.ctx = this.canvas.getContext('2d');
-                this.playerId = this.sessionId + '_' + Math.random().toString(36).substr(2, 9);
+          // Add frame time to our sample array
+          this.frameTimes.push(frameTime);
+          if (this.frameTimes.length > this.maxSamples) {
+            this.frameTimes.shift();
+          }
 
-                // Set canvas size
-                this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
+          // Update min/max
+          this.minFrameTime = Math.min(this.minFrameTime, frameTime);
+          this.maxFrameTime = Math.max(this.maxFrameTime, frameTime);
 
-                // Load protocol logos
-                this.protocolLogos = {};
-                this.protocolTypes = ['apriori', 'monad', 'monda', 'multisynq', 'rarebet', 'uniswap'];
-                this.loadLogos();
+          this.frameCount++;
 
-                // Load island SVGs
-                this.islandLogos = {};
-                this.islandTypes = ['island1', 'island2', 'island3', 'island4', 'island5'];
-                this.loadIslandLogos();
+          // Update FPS and stats every 250ms
+          if (now - this.lastFpsUpdate > 250) {
+            this.updateStats(now);
+            this.lastFpsUpdate = now;
+          }
+        }
 
-                // Game state
-                this.gameState = { players: [], food: [], islands: [] };
-                this.camera = { x: 0, y: 0 };
-                this.mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        updateStats(now) {
+          // Calculate FPS
+          const timeDelta = now - this.lastTime;
+          if (timeDelta > 0) {
+            this.fps = Math.round((this.frameCount * 1000) / timeDelta);
+          }
 
-                // Cursor movement tracking for drift behavior
-                this.lastMousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-                this.lastMouseMoveTime = Date.now();
-                this.cursorStillThreshold = 100; // ms - time before entering drift mode
-                this.isDrifting = false;
+          // Calculate average frame time
+          if (this.frameTimes.length > 0) {
+            this.avgFrameTime =
+              this.frameTimes.reduce((a, b) => a + b, 0) /
+              this.frameTimes.length;
+          }
 
-                // Local food state for client-side prediction
-                this.localFoodState = new Map(); // Track which food items are locally "eaten"
-                this.predictedEatenFood = new Set(); // Food IDs that we predict are eaten
+          // Reset counters
+          this.frameCount = 0;
+          this.lastTime = now;
 
-                // Initialize performance stats
-                this.perfStats = new PerformanceStats();
+          // Update UI
+          this.updateDisplay();
+        }
 
-                // Client-side prediction state
-                this.localPlayer = {
-                    x: Math.random() * WORLD_WIDTH,
-                    y: Math.random() * WORLD_HEIGHT,
-                    size: 15,
-                    color: '#FF6B6B',
-                    targetX: 0,
-                    targetY: 0,
-                    vx: 0, // velocity x
-                    vy: 0  // velocity y
-                };
+        updateDisplay() {
+          this.fpsDisplay.textContent = this.fps;
+          this.frameTimeDisplay.textContent =
+            this.frameTimes.length > 0
+              ? this.frameTimes[this.frameTimes.length - 1].toFixed(1)
+              : "--";
+          this.avgFrameDisplay.textContent = this.avgFrameTime.toFixed(1);
+          this.minMaxDisplay.textContent = `${
+            this.minFrameTime === Infinity ? "--" : this.minFrameTime.toFixed(1)
+          }/${this.maxFrameTime.toFixed(1)}`;
+          this.latencyDisplay.textContent = this.inputLatency.toFixed(1);
 
-                // Network sync timing
-                this.lastNetworkSync = 0;
-                this.networkSyncInterval = 100; // Send position every 100ms (10Hz)
+          // Color code FPS based on performance
+          if (this.fps >= 55) {
+            this.fpsDisplay.style.color = "#4CAF50"; // Green
+          } else if (this.fps >= 30) {
+            this.fpsDisplay.style.color = "#FF9800"; // Orange
+          } else {
+            this.fpsDisplay.style.color = "#F44336"; // Red
+          }
+        }
 
-                // Subscribe to game updates
-                this.subscribe(this.sessionId, "gameStateUpdate", (state) => this.updateGameState(state));
+        recordInputLatency() {
+          this.lastInputTime = performance.now();
+        }
 
-                // Setup input
-                this.setupInput();
+        measureInputLatency() {
+          if (this.lastInputTime > 0) {
+            this.inputLatency = performance.now() - this.lastInputTime;
+            this.lastInputTime = 0;
+          }
+        }
 
-                // Start render loop - using requestAnimationFrame for smooth 60fps
-                this.startRenderLoop();
+        reset() {
+          this.minFrameTime = Infinity;
+          this.maxFrameTime = 0;
+          this.frameTimes = [];
+        }
+      }
 
-                // Start network sync loop - separate from rendering
-                this.startNetworkLoop();
+      // Game Model - handles all game logic and state
+      class MopeGameModel extends Multisynq.Model {
+        init() {
+          // Game state
+          this.players = new Map();
+          this.food = new Map();
+          this.islands = new Map();
+          this.nextFoodId = 0;
+          this.nextIslandId = 0;
 
-                // Join the game
-                this.publish(this.sessionId, "playerJoin", { playerId: this.playerId });
+          // Global throttling
+          this.lastGlobalGameStateUpdate = 0;
 
-                // Ensure proper sizing on initialization
-                this.handleResize();
+          // Subscribe to player events
+          this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
+          this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
+          this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
+          this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
 
-                console.log("Game view initialized, player ID:", this.playerId);
+          // Spawn initial food and islands
+          this.spawnFood(50);
+          this.spawnIslands(4); // Add 4 islands to start
+
+          // Start food spawning loop
+          this.future(1000).spawnFoodLoop();
+
+          // Start server-side movement update loop
+          this.future(50).updateServerMovement();
+
+          // Periodic broadcast removed - game states sent on events only
+
+          console.log("Game model initialized");
+        }
+
+        handlePlayerJoin(data) {
+          const playerId = data.playerId;
+          this.players.set(playerId, {
+            id: playerId,
+            x: Math.random() * WORLD_WIDTH,
+            y: Math.random() * WORLD_HEIGHT,
+            targetX: Math.random() * WORLD_WIDTH,
+            targetY: Math.random() * WORLD_HEIGHT,
+            size: 15,
+            color: this.getRandomColor(),
+          });
+
+          console.log("Player joined:", playerId);
+          this.publishGameStateThrottled();
+        }
+
+        handlePlayerMove(data) {
+          const player = this.players.get(data.playerId);
+          if (player) {
+            // Use client's predicted position if reasonable, otherwise interpolate
+            if (data.x && data.y) {
+              const dx = data.x - player.x;
+              const dy = data.y - player.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+
+              // If client position is reasonable, use it
+              if (distance < 100) {
+                player.x = data.x;
+                player.y = data.y;
+              }
             }
 
-            loadLogos() {
-                this.protocolTypes.forEach(protocol => {
-                    const img = new Image();
-                    img.onload = () => {
-                        console.log(`Loaded ${protocol} logo (${Object.keys(this.protocolLogos).filter(k => this.protocolLogos[k].complete && this.protocolLogos[k].naturalWidth > 0).length}/${this.protocolTypes.length})`);
-                    };
-                    img.onerror = () => {
-                        console.log(`Failed to load ${protocol} logo`);
-                        // Mark as failed so we don't try to draw it
-                        this.protocolLogos[protocol] = null;
-                    };
-                    img.src = `assets/logos/defi/${protocol}.svg`;
-                    this.protocolLogos[protocol] = img;
-                });
+            // Store target for server-side movement
+            player.targetX = data.targetX;
+            player.targetY = data.targetY;
+
+            // Keep player in bounds
+            player.x = Math.max(
+              player.size,
+              Math.min(WORLD_WIDTH - player.size, player.x)
+            );
+            player.y = Math.max(
+              player.size,
+              Math.min(WORLD_HEIGHT - player.size, player.y)
+            );
+
+            // Check food collisions
+            this.checkFoodCollisions(player);
+          }
+
+          // Use global throttled update
+          this.publishGameStateThrottled();
+        }
+
+        handlePlayerLeave(data) {
+          this.players.delete(data.playerId);
+          this.publishGameStateThrottled();
+        }
+
+        handleFoodEaten(data) {
+          const foodId = data.foodId;
+          const playerId = data.playerId;
+          const player = this.players.get(playerId);
+
+          // Verify the food still exists and player is close enough and big enough
+          if (player && this.food.has(foodId)) {
+            const food = this.food.get(foodId);
+            const dx = player.x - food.x;
+            const dy = player.y - food.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Double-check collision on server side - distance AND size requirement
+            if (
+              distance < player.size + food.size &&
+              player.size >= food.size
+            ) {
+              this.food.delete(foodId);
+              player.size += 1;
+
+              // Spawn new food to replace eaten one
+              this.spawnFood(1);
+              console.log(
+                "Food eaten by player:",
+                playerId,
+                "Food ID:",
+                foodId,
+                "Player size:",
+                player.size,
+                "Food size:",
+                food.size
+              );
+
+              // Send immediate update for food consumption
+              this.publishGameStateThrottled();
+            } else if (distance < player.size + food.size) {
+              console.log(
+                "Player too small to eat food:",
+                playerId,
+                "Player size:",
+                player.size,
+                "Food size:",
+                food.size
+              );
             }
+          }
+        }
 
-            loadIslandLogos() {
-                this.islandTypes.forEach(islandType => {
-                    const img = new Image();
-                    img.onload = () => {
-                        console.log(`Loaded ${islandType} island (${Object.keys(this.islandLogos).filter(k => this.islandLogos[k].complete && this.islandLogos[k].naturalWidth > 0).length}/${this.islandTypes.length})`);
-                    };
-                    img.onerror = () => {
-                        console.log(`Failed to load ${islandType} island`);
-                        // Mark as failed so we don't try to draw it
-                        this.islandLogos[islandType] = null;
-                    };
-                    img.src = `assets/islands/${islandType}.svg`;
-                    this.islandLogos[islandType] = img;
-                });
+        checkFoodCollisions(player) {
+          for (let [foodId, food] of this.food.entries()) {
+            const dx = player.x - food.x;
+            const dy = player.y - food.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if player is close enough AND big enough to eat the logo
+            if (
+              distance < player.size + food.size &&
+              player.size >= food.size
+            ) {
+              // Player eats food
+              this.food.delete(foodId);
+              player.size += 1;
+
+              // Spawn new food to replace eaten one
+              this.spawnFood(1);
+              break;
             }
+          }
+        }
 
-            handleResize() {
-                // Update canvas dimensions
-                this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
-                
-                // Recalculate camera position to keep player centered (adjusted for zoom)
-                const zoomScale = 1.12;
-                const effectiveWidth = window.innerWidth / zoomScale;
-                const effectiveHeight = window.innerHeight / zoomScale;
-                
-                this.camera.x = this.localPlayer.x - effectiveWidth / 2;
-                this.camera.y = this.localPlayer.y - effectiveHeight / 2;
-                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x));
-                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y));
-                
-                console.log("Game resized to:", window.innerWidth, "x", window.innerHeight);
-            }
+        spawnFood(count) {
+          for (let i = 0; i < count; i++) {
+            const foodId = this.nextFoodId++;
+            this.food.set(foodId, {
+              id: foodId,
+              x: Math.random() * WORLD_WIDTH,
+              y: Math.random() * WORLD_HEIGHT,
+              size: 6 + Math.random() * 20, // Varied sizes between 6-26
+              logoType: this.getRandomLogoType(),
+              angle: Math.random() * Math.PI * 2, // Random starting angle
+              rotationSpeed: 0.01 + Math.random() * 0.03, // Random rotation speed
+              rotationDirection: Math.random() > 0.5 ? 1 : -1, // Random direction
+            });
+          }
+        }
 
-            setupInput() {
-                // Mouse movement - just update target, don't send to network immediately
-                this.canvas.addEventListener('mousemove', (e) => {
-                    // Record input time for latency measurement
-                    this.perfStats.recordInputLatency();
-                    
-                    const rect = this.canvas.getBoundingClientRect();
-                    const newMouseX = e.clientX - rect.left;
-                    const newMouseY = e.clientY - rect.top;
+        spawnIslands(count) {
+          for (let i = 0; i < count; i++) {
+            const islandId = this.nextIslandId++;
+            this.islands.set(islandId, {
+              id: islandId,
+              x: Math.random() * WORLD_WIDTH,
+              y: Math.random() * WORLD_HEIGHT,
+              size: 50 + Math.random() * 60, // Bigger sizes between 50-110
+              islandType: this.getRandomIslandType(), // Random island SVG
+            });
+          }
+        }
 
-                    // Check if cursor actually moved
-                    if (newMouseX !== this.mousePos.x || newMouseY !== this.mousePos.y) {
-                        this.lastMousePos.x = this.mousePos.x;
-                        this.lastMousePos.y = this.mousePos.y;
-                        this.mousePos.x = newMouseX;
-                        this.mousePos.y = newMouseY;
-                        this.lastMouseMoveTime = Date.now();
-                        this.isDrifting = false; // Exit drift mode when cursor moves
-                    }
+        spawnFoodLoop() {
+          // Maintain food count
+          if (this.food.size < 40) {
+            this.spawnFood(5);
+            this.publishGameStateThrottled();
+          }
 
-                    // Update local target immediately for responsiveness (adjusted for zoom)
-                    const zoomScale = 1.12;
-                    this.localPlayer.targetX = this.mousePos.x / zoomScale + this.camera.x;
-                    this.localPlayer.targetY = this.mousePos.y / zoomScale + this.camera.y;
-                });
+          // Schedule next spawn
+          this.future(2000).spawnFoodLoop();
+        }
 
-                // Handle window resize
-                let resizeTimeout;
-                window.addEventListener('resize', () => {
-                    // Debounce resize events to prevent excessive updates
-                    clearTimeout(resizeTimeout);
-                    resizeTimeout = setTimeout(() => {
-                        this.handleResize();
-                    }, 100); // Wait 100ms after last resize event
-                });
-            }
+        updateServerMovement() {
+          // Update all players' positions on server-side
+          for (let [playerId, player] of this.players.entries()) {
+            if (player.targetX !== undefined && player.targetY !== undefined) {
+              const dx = player.targetX - player.x;
+              const dy = player.targetY - player.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
 
-            startRenderLoop() {
-                const renderFrame = () => {
-                    this.updateLocalPlayer(); // Update local player position
-                    this.render(); // Render everything
-                    requestAnimationFrame(renderFrame);
-                };
-                renderFrame();
-            }
-
-            startNetworkLoop() {
-                setInterval(() => {
-                    this.sendNetworkUpdate();
-                }, this.networkSyncInterval);
-            }
-
-            updateLocalPlayer() {
-                // Check if cursor has been still long enough to enter drift mode
-                const now = Date.now();
-                const cursorStillTime = now - this.lastMouseMoveTime;
-                const shouldDrift = cursorStillTime > this.cursorStillThreshold;
-
-                // Update drift state
-                if (shouldDrift && !this.isDrifting) {
-                    this.isDrifting = true;
-                    console.log("Entering drift mode");
-                } else if (!shouldDrift && this.isDrifting) {
-                    this.isDrifting = false;
-                    console.log("Exiting drift mode");
-                }
-
-                // Movement parameters
-                const maxSpeed = Math.max(3, 8 - this.localPlayer.size * 0.1);
-                const acceleration = 0.3; // How quickly we accelerate toward target
-                const normalFriction = 0.92; // Normal friction when near cursor
-                const driftFriction = 0.995; // Much less friction when drifting (loses only 0.5% per frame)
-                const minDriftSpeed = 0.8; // Minimum speed when drifting
-
-                if (this.isDrifting) {
-                    // Drift mode - maintain momentum, apply minimal friction
-                    this.localPlayer.vx *= driftFriction;
-                    this.localPlayer.vy *= driftFriction;
-
-                    // Maintain minimum drift speed
-                    const currentSpeed = Math.sqrt(this.localPlayer.vx * this.localPlayer.vx + this.localPlayer.vy * this.localPlayer.vy);
-                    if (currentSpeed > 0 && currentSpeed < minDriftSpeed) {
-                        const scale = minDriftSpeed / currentSpeed;
-                        this.localPlayer.vx *= scale;
-                        this.localPlayer.vy *= scale;
-                    }
-                } else {
-                    // Normal mode - move toward cursor
-                    const dx = this.localPlayer.targetX - this.localPlayer.x;
-                    const dy = this.localPlayer.targetY - this.localPlayer.y;
-                    const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
-
-                    if (distanceToTarget > 2) {
-                        // Accelerate toward target
-                        const targetVx = (dx / distanceToTarget) * maxSpeed;
-                        const targetVy = (dy / distanceToTarget) * maxSpeed;
-                        
-                        // Apply acceleration toward target direction
-                        this.localPlayer.vx += (targetVx - this.localPlayer.vx) * acceleration;
-                        this.localPlayer.vy += (targetVy - this.localPlayer.vy) * acceleration;
-                    } else {
-                        // Apply normal friction when close to target
-                        this.localPlayer.vx *= normalFriction;
-                        this.localPlayer.vy *= normalFriction;
-                    }
-                }
-
-                // Update position based on velocity
-                this.localPlayer.x += this.localPlayer.vx;
-                this.localPlayer.y += this.localPlayer.vy;
+              if (distance > 2) {
+                const moveSpeed = Math.max(1, 5 - player.size * 0.1);
+                player.x += (dx / distance) * moveSpeed * 0.5; // Slower server movement
+                player.y += (dy / distance) * moveSpeed * 0.5;
 
                 // Keep player in bounds
-                this.localPlayer.x = Math.max(this.localPlayer.size, Math.min(WORLD_WIDTH - this.localPlayer.size, this.localPlayer.x));
-                this.localPlayer.y = Math.max(this.localPlayer.size, Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y));
+                player.x = Math.max(
+                  player.size,
+                  Math.min(WORLD_WIDTH - player.size, player.x)
+                );
+                player.y = Math.max(
+                  player.size,
+                  Math.min(WORLD_HEIGHT - player.size, player.y)
+                );
 
-                // Apply velocity damping when hitting boundaries
-                if (this.localPlayer.x <= this.localPlayer.size || this.localPlayer.x >= WORLD_WIDTH - this.localPlayer.size) {
-                    this.localPlayer.vx *= -0.3; // Bounce with reduced velocity
-                }
-                if (this.localPlayer.y <= this.localPlayer.size || this.localPlayer.y >= WORLD_HEIGHT - this.localPlayer.size) {
-                    this.localPlayer.vy *= -0.3; // Bounce with reduced velocity
-                }
-
-                // Client-side food collision detection for immediate feedback
-                this.checkLocalFoodCollisions();
-
-                // Check island collisions and handle bouncing
-                this.checkIslandCollisions();
-
-                // Update camera to follow local player (adjusted for zoom)
-                const zoomScale = 1.12;
-                const effectiveWidth = window.innerWidth / zoomScale;
-                const effectiveHeight = window.innerHeight / zoomScale;
-                
-                this.camera.x = this.localPlayer.x - effectiveWidth / 2;
-                this.camera.y = this.localPlayer.y - effectiveHeight / 2;
-                this.camera.x = Math.max(0, Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x));
-                this.camera.y = Math.max(0, Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y));
+                // Check island collisions on server side
+                this.checkServerIslandCollisions(player);
+              }
             }
+          }
 
-            checkLocalFoodCollisions() {
-                // Check collisions with food items that aren't already predicted as eaten
-                this.gameState.food.forEach(food => {
-                    if (!this.predictedEatenFood.has(food.id)) {
-                        const dx = this.localPlayer.x - food.x;
-                        const dy = this.localPlayer.y - food.y;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-
-                        // Check if player is close enough AND big enough to eat the logo
-                        if (distance < this.localPlayer.size + food.size && this.localPlayer.size >= food.size) {
-                            // Predict food is eaten - hide it immediately
-                            this.predictedEatenFood.add(food.id);
-                            
-                            // Predict size increase
-                            this.localPlayer.size += 1;
-                            
-                            // Send food eaten event to server
-                            this.publish(this.sessionId, "foodEaten", {
-                                playerId: this.playerId,
-                                foodId: food.id,
-                                playerX: this.localPlayer.x,
-                                playerY: this.localPlayer.y
-                            });
-
-                            console.log("Food eaten locally:", food.id);
-                        }
-                    }
-                });
+          // Update food rotation angles
+          for (let [foodId, food] of this.food.entries()) {
+            if (
+              food.angle !== undefined &&
+              food.rotationSpeed &&
+              food.rotationDirection
+            ) {
+              food.angle += food.rotationSpeed * food.rotationDirection;
             }
+          }
 
-            checkIslandCollisions() {
-                // Check collisions with islands and apply bounce physics
-                this.gameState.islands.forEach(island => {
-                    const dx = this.localPlayer.x - island.x;
-                    const dy = this.localPlayer.y - island.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    const minDistance = this.localPlayer.size + island.size;
-
-                    if (distance < minDistance) {
-                        // Collision detected - calculate bounce
-                        const overlap = minDistance - distance;
-                        
-                        // Normalize the collision vector
-                        const nx = distance > 0 ? dx / distance : 1;
-                        const ny = distance > 0 ? dy / distance : 0;
-
-                        // Move player out of collision
-                        this.localPlayer.x += nx * overlap;
-                        this.localPlayer.y += ny * overlap;
-
-                        // Apply bounce to velocity
-                        const bounceStrength = 0.8;
-                        const velocityAlongNormal = this.localPlayer.vx * nx + this.localPlayer.vy * ny;
-                        
-                        // Only bounce if moving toward the island
-                        if (velocityAlongNormal < 0) {
-                            this.localPlayer.vx -= velocityAlongNormal * nx * (1 + bounceStrength);
-                            this.localPlayer.vy -= velocityAlongNormal * ny * (1 + bounceStrength);
-                        }
-
-                        // Add some friction to the bounce
-                        this.localPlayer.vx *= 0.7;
-                        this.localPlayer.vy *= 0.7;
-                    }
-                });
-            }
-
-            sendNetworkUpdate() {
-                // Only send network updates periodically, not on every frame
-                const now = Date.now();
-                if (now - this.lastNetworkSync >= this.networkSyncInterval) {
-                    this.lastNetworkSync = now;
-                    
-                    // Send current position and target to server
-                    this.publish(this.sessionId, "playerMove", {
-                        playerId: this.playerId,
-                        x: this.localPlayer.x,
-                        y: this.localPlayer.y,
-                        targetX: this.localPlayer.targetX,
-                        targetY: this.localPlayer.targetY
-                    });
-                }
-            }
-
-            updateGameState(state) {
-                // Reconcile food predictions with server state
-                const serverFoodIds = new Set(state.food.map(f => f.id));
-                
-                // Check our predictions against server reality
-                for (let predictedFoodId of this.predictedEatenFood) {
-                    if (serverFoodIds.has(predictedFoodId)) {
-                        // Server still has this food - our prediction was wrong, remove from predicted set
-                        this.predictedEatenFood.delete(predictedFoodId);
-                        console.log("Food prediction corrected - food still exists:", predictedFoodId);
-                    }
-                    // If server doesn't have the food, our prediction was correct - keep it in the set
-                }
-
-                // Update other players with server data
-                this.gameState = state;
-
-                // Find our player in server data and reconcile if needed
-                const serverPlayer = state.players.find(p => p.id === this.playerId);
-                if (serverPlayer) {
-                    // Simple reconciliation - if too far from server, adjust
-                    const dx = serverPlayer.x - this.localPlayer.x;
-                    const dy = serverPlayer.y - this.localPlayer.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance > 50) { // If too far from server position, snap back
-                        this.localPlayer.x = serverPlayer.x;
-                        this.localPlayer.y = serverPlayer.y;
-                    }
-
-                    // Always sync size from server (authoritative for food consumption)
-                    this.localPlayer.size = serverPlayer.size;
-                    this.localPlayer.color = serverPlayer.color;
-
-                    // Update UI
-                    document.getElementById('sizeDisplay').textContent = Math.floor(serverPlayer.size);
-                }
-
-                document.getElementById('playersCount').textContent = state.players.length;
-            }
-
-            render() {
-                // Start performance measurement
-                this.perfStats.startFrame();
-                
-                // Measure input latency
-                this.perfStats.measureInputLatency();
-
-                // Clear canvas
-                this.ctx.fillStyle = '#90EE90';
-                this.ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-
-                // Save context for camera transform and zoom
-                this.ctx.save();
-                this.ctx.scale(1.12, 1.12); // 12% zoom in
-                this.ctx.translate(-this.camera.x, -this.camera.y);
-
-                // Draw food (protocol logos)
-                this.gameState.food.forEach(food => {
-                    // Skip food that we predict has been eaten
-                    if (!this.predictedEatenFood.has(food.id)) {
-                        const logo = this.protocolLogos[food.logoType];
-                        if (logo && logo.complete && logo.naturalWidth > 0) {
-                            // Draw logo centered at food position with rotation
-                            // Logo size can now be larger than players, with reasonable maximum
-                            const logoSize = Math.min(food.size * 1.5, 50); // Max size of 50 for bigger variety
-                            
-                            this.ctx.save();
-                            this.ctx.translate(food.x, food.y);
-                            this.ctx.rotate(food.angle || 0);
-                            this.ctx.drawImage(
-                                logo, 
-                                -logoSize / 2, 
-                                -logoSize / 2, 
-                                logoSize, 
-                                logoSize
-                            );
-                            this.ctx.restore();
-                        } else {
-                            // Fallback to circle if logo not loaded or failed
-                            this.ctx.fillStyle = '#FF6B6B';
-                            this.ctx.beginPath();
-                            this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
-                            this.ctx.fill();
-                        }
-                    }
-                });
-
-                // Draw islands with SVGs
-                this.gameState.islands.forEach(island => {
-                    const islandLogo = this.islandLogos[island.islandType];
-                    if (islandLogo && islandLogo.complete && islandLogo.naturalWidth > 0) {
-                        // Draw island SVG
-                        this.ctx.save();
-                        this.ctx.translate(island.x, island.y);
-                        this.ctx.drawImage(
-                            islandLogo,
-                            -island.size,
-                            -island.size,
-                            island.size * 2,
-                            island.size * 2
-                        );
-                        this.ctx.restore();
-                    } else {
-                        // Fallback to black circle if island SVG not loaded or failed
-                        this.ctx.fillStyle = '#2F4F2F';
-                        this.ctx.beginPath();
-                        this.ctx.arc(island.x, island.y, island.size, 0, Math.PI * 2);
-                        this.ctx.fill();
-                    }
-
-                    // Island outline
-                    this.ctx.strokeStyle = '#000';
-                    this.ctx.lineWidth = 1;
-                    this.ctx.stroke();
-                });
-
-                // Draw other players (from server data)
-                this.gameState.players.forEach(player => {
-                    if (player.id !== this.playerId) { // Don't draw our own player from server data
-                        this.ctx.fillStyle = player.color;
-                        this.ctx.beginPath();
-                        this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-                        this.ctx.fill();
-
-                        // Player outline
-                        this.ctx.strokeStyle = '#000';
-                        this.ctx.lineWidth = 2;
-                        this.ctx.stroke();
-                    }
-                });
-
-                // Draw our own player from local prediction (most responsive)
-                this.ctx.fillStyle = this.localPlayer.color;
-                this.ctx.beginPath();
-                this.ctx.arc(this.localPlayer.x, this.localPlayer.y, this.localPlayer.size, 0, Math.PI * 2);
-                this.ctx.fill();
-
-                // Highlight our own player
-                this.ctx.strokeStyle = '#FFF';
-                this.ctx.lineWidth = 3;
-                this.ctx.stroke();
-
-                // Draw black outline
-                this.ctx.strokeStyle = '#000';
-                this.ctx.lineWidth = 2;
-                this.ctx.stroke();
-
-                // Restore context
-                this.ctx.restore();
-
-                // Draw grid for reference (optional)
-                this.drawGrid();
-
-                // End performance measurement
-                this.perfStats.endFrame();
-            }
-
-            drawGrid() {
-                this.ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-                this.ctx.lineWidth = 1;
-
-                const gridSize = 100;
-                const zoomScale = 1.12;
-                const effectiveWidth = window.innerWidth / zoomScale;
-                const effectiveHeight = window.innerHeight / zoomScale;
-                const startX = -(this.camera.x % gridSize);
-                const startY = -(this.camera.y % gridSize);
-
-                for (let x = startX; x < effectiveWidth; x += gridSize) {
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(x, 0);
-                    this.ctx.lineTo(x, effectiveHeight);
-                    this.ctx.stroke();
-                }
-
-                for (let y = startY; y < effectiveHeight; y += gridSize) {
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(0, y);
-                    this.ctx.lineTo(effectiveWidth, y);
-                    this.ctx.stroke();
-                }
-            }
+          // Schedule next update
+          this.future(50).updateServerMovement(); // 20Hz server updates
         }
 
-        // Start the game
-        MopeGameModel.register("MopeGameModel");
-        Multisynq.Session.join({
-            apiKey: API_KEY,
-            appId: "com.mopeio.clone",
-            model: MopeGameModel,
-            view: MopeGameView,
-            name: Multisynq.App.autoSession(),
-            password: Multisynq.App.autoPassword()
-        }).then(session => {
-            console.log("Joined game session:", session.id);
-            
-            // Debug: Log all available Multisynq.App methods
-            console.log("Available Multisynq.App methods:", Object.keys(Multisynq.App));
-            console.log("Full Multisynq.App object:", Multisynq.App);
-            
-            // Wait for session to be established, then create widget
-            setTimeout(() => {
-                console.log("Attempting to create widget dock...");
-                
-                try {
-                    // Try the standard widget dock first
-                    Multisynq.App.makeWidgetDock();
-                    console.log("makeWidgetDock() completed");
-                    
-                    // Also try QR-specific methods
-                    setTimeout(() => {
-                        try {
-                            console.log("Trying makeQRCanvas...");
-                            if (typeof Multisynq.App.makeQRCanvas === 'function') {
-                                Multisynq.App.makeQRCanvas();
-                                console.log("makeQRCanvas() completed");
-                            }
-                            
-                            console.log("Trying qrcode method...");
-                            if (typeof Multisynq.App.qrcode === 'function') {
-                                const qrResult = Multisynq.App.qrcode();
-                                console.log("qrcode() result:", qrResult);
-                            }
-                            
-                            console.log("Trying makeSessionWidgets...");
-                            if (typeof Multisynq.App.makeSessionWidgets === 'function') {
-                                Multisynq.App.makeSessionWidgets();
-                                console.log("makeSessionWidgets() completed");
-                            }
-                            
-                        } catch (qrError) {
-                            console.error("QR method error:", qrError);
-                        }
-                    }, 500);
-                    
-                    // Check if widget was actually created
-                    setTimeout(() => {
-                        const bodyChildren = Array.from(document.body.children);
-                        console.log("All body children after widget creation:", bodyChildren.map(el => ({
-                            tagName: el.tagName,
-                            id: el.id,
-                            className: el.className,
-                            style: el.style.cssText,
-                            innerHTML: el.innerHTML.substring(0, 100) + (el.innerHTML.length > 100 ? '...' : '')
-                        })));
-                        
-                        // Look specifically for canvas elements (QR codes are often canvas)
-                        const canvases = document.querySelectorAll('canvas');
-                        console.log("Canvas elements found:", canvases.length);
-                        canvases.forEach((canvas, i) => {
-                            console.log(`Canvas ${i}:`, {
-                                width: canvas.width,
-                                height: canvas.height,
-                                style: canvas.style.cssText,
-                                parent: canvas.parentElement
-                            });
-                        });
-                        
-                    }, 2000);
-                    
-                } catch (error) {
-                    console.error("makeWidgetDock error:", error);
+        checkServerIslandCollisions(player) {
+          // Server-side island collision detection
+          for (let [islandId, island] of this.islands.entries()) {
+            const dx = player.x - island.x;
+            const dy = player.y - island.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = player.size + island.size;
+
+            if (distance < minDistance) {
+              // Push player out of island
+              const overlap = minDistance - distance;
+              const nx = distance > 0 ? dx / distance : 1;
+              const ny = distance > 0 ? dy / distance : 0;
+
+              player.x += nx * overlap;
+              player.y += ny * overlap;
+
+              // Keep player in bounds after collision adjustment
+              player.x = Math.max(
+                player.size,
+                Math.min(WORLD_WIDTH - player.size, player.x)
+              );
+              player.y = Math.max(
+                player.size,
+                Math.min(WORLD_HEIGHT - player.size, player.y)
+              );
+            }
+          }
+        }
+
+        publishGameStateThrottled() {
+          const now = this.now();
+          if (now - this.lastGlobalGameStateUpdate > 200) {
+            // Max 5 updates per second globally
+            this.lastGlobalGameStateUpdate = now;
+            this.publish(
+              this.sessionId,
+              "gameStateUpdate",
+              this.getGameState()
+            );
+          }
+        }
+
+        getGameState() {
+          return {
+            players: Array.from(this.players.values()),
+            food: Array.from(this.food.values()),
+            islands: Array.from(this.islands.values()),
+          };
+        }
+
+        getRandomColor() {
+          const colors = [
+            "#FF6B6B",
+            "#4ECDC4",
+            "#45B7D1",
+            "#96CEB4",
+            "#FCEA2B",
+            "#FF9FF3",
+          ];
+          return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        getRandomLogoType() {
+          const protocols = [
+            "apriori",
+            "monad",
+            "monda",
+            "multisynq",
+            "rarebet",
+            "uniswap",
+          ];
+          return protocols[Math.floor(Math.random() * protocols.length)];
+        }
+
+        getRandomIslandType() {
+          const islands = [
+            "island1",
+            "island2",
+            "island3",
+            "island4",
+            "island5",
+          ];
+          return islands[Math.floor(Math.random() * islands.length)];
+        }
+      }
+
+      // Game View - handles rendering and input
+      class MopeGameView extends Multisynq.View {
+        constructor(model) {
+          super(model);
+
+          this.canvas = document.getElementById("gameCanvas");
+          this.ctx = this.canvas.getContext("2d");
+          this.playerId =
+            this.sessionId + "_" + Math.random().toString(36).substr(2, 9);
+
+          // Set canvas size
+          this.canvas.width = window.innerWidth;
+          this.canvas.height = window.innerHeight;
+
+          // Load protocol logos
+          this.protocolLogos = {};
+          this.protocolTypes = [
+            "apriori",
+            "monad",
+            "monda",
+            "multisynq",
+            "rarebet",
+            "uniswap",
+          ];
+          this.loadLogos();
+
+          // Load island SVGs
+          this.islandLogos = {};
+          this.islandTypes = [
+            "island1",
+            "island2",
+            "island3",
+            "island4",
+            "island5",
+          ];
+          this.loadIslandLogos();
+
+          // Game state
+          this.gameState = { players: [], food: [], islands: [] };
+          this.camera = { x: 0, y: 0 };
+          this.mousePos = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          };
+
+          // Cursor movement tracking for drift behavior
+          this.lastMousePos = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          };
+          this.lastMouseMoveTime = Date.now();
+          this.cursorStillThreshold = 100; // ms - time before entering drift mode
+          this.isDrifting = false;
+
+          // Local food state for client-side prediction
+          this.localFoodState = new Map(); // Track which food items are locally "eaten"
+          this.predictedEatenFood = new Set(); // Food IDs that we predict are eaten
+
+          // Initialize performance stats
+          this.perfStats = new PerformanceStats();
+
+          // Client-side prediction state
+          this.localPlayer = {
+            x: Math.random() * WORLD_WIDTH,
+            y: Math.random() * WORLD_HEIGHT,
+            size: 15,
+            color: "#FF6B6B",
+            targetX: 0,
+            targetY: 0,
+            vx: 0, // velocity x
+            vy: 0, // velocity y
+          };
+
+          // Network sync timing
+          this.lastNetworkSync = 0;
+          this.networkSyncInterval = 100; // Send position every 100ms (10Hz)
+
+          // Subscribe to game updates
+          this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
+            this.updateGameState(state)
+          );
+
+          // Setup input
+          this.setupInput();
+
+          // Start render loop - using requestAnimationFrame for smooth 60fps
+          this.startRenderLoop();
+
+          // Start network sync loop - separate from rendering
+          this.startNetworkLoop();
+
+          // Join the game
+          this.publish(this.sessionId, "playerJoin", {
+            playerId: this.playerId,
+          });
+
+          // Ensure proper sizing on initialization
+          this.handleResize();
+
+          console.log("Game view initialized, player ID:", this.playerId);
+        }
+
+        loadLogos() {
+          this.protocolTypes.forEach((protocol) => {
+            const img = new Image();
+            img.onload = () => {
+              console.log(
+                `Loaded ${protocol} logo (${
+                  Object.keys(this.protocolLogos).filter(
+                    (k) =>
+                      this.protocolLogos[k].complete &&
+                      this.protocolLogos[k].naturalWidth > 0
+                  ).length
+                }/${this.protocolTypes.length})`
+              );
+            };
+            img.onerror = () => {
+              console.log(`Failed to load ${protocol} logo`);
+              // Mark as failed so we don't try to draw it
+              this.protocolLogos[protocol] = null;
+            };
+            img.src = `assets/logos/defi/${protocol}.svg`;
+            this.protocolLogos[protocol] = img;
+          });
+        }
+
+        loadIslandLogos() {
+          this.islandTypes.forEach((islandType) => {
+            const img = new Image();
+            img.onload = () => {
+              console.log(
+                `Loaded ${islandType} island (${
+                  Object.keys(this.islandLogos).filter(
+                    (k) =>
+                      this.islandLogos[k].complete &&
+                      this.islandLogos[k].naturalWidth > 0
+                  ).length
+                }/${this.islandTypes.length})`
+              );
+            };
+            img.onerror = () => {
+              console.log(`Failed to load ${islandType} island`);
+              // Mark as failed so we don't try to draw it
+              this.islandLogos[islandType] = null;
+            };
+            img.src = `assets/islands/${islandType}.svg`;
+            this.islandLogos[islandType] = img;
+          });
+        }
+
+        handleResize() {
+          // Update canvas dimensions
+          this.canvas.width = window.innerWidth;
+          this.canvas.height = window.innerHeight;
+
+          // Recalculate camera position to keep player centered (adjusted for zoom)
+          const zoomScale = 1.12;
+          const effectiveWidth = window.innerWidth / zoomScale;
+          const effectiveHeight = window.innerHeight / zoomScale;
+
+          this.camera.x = this.localPlayer.x - effectiveWidth / 2;
+          this.camera.y = this.localPlayer.y - effectiveHeight / 2;
+          this.camera.x = Math.max(
+            0,
+            Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x)
+          );
+          this.camera.y = Math.max(
+            0,
+            Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y)
+          );
+
+          console.log(
+            "Game resized to:",
+            window.innerWidth,
+            "x",
+            window.innerHeight
+          );
+        }
+
+        setupInput() {
+          // Mouse movement - just update target, don't send to network immediately
+          this.canvas.addEventListener("mousemove", (e) => {
+            // Record input time for latency measurement
+            this.perfStats.recordInputLatency();
+
+            const rect = this.canvas.getBoundingClientRect();
+            const newMouseX = e.clientX - rect.left;
+            const newMouseY = e.clientY - rect.top;
+
+            // Check if cursor actually moved
+            if (
+              newMouseX !== this.mousePos.x ||
+              newMouseY !== this.mousePos.y
+            ) {
+              this.lastMousePos.x = this.mousePos.x;
+              this.lastMousePos.y = this.mousePos.y;
+              this.mousePos.x = newMouseX;
+              this.mousePos.y = newMouseY;
+              this.lastMouseMoveTime = Date.now();
+              this.isDrifting = false; // Exit drift mode when cursor moves
+            }
+
+            // Update local target immediately for responsiveness (adjusted for zoom)
+            const zoomScale = 1.12;
+            this.localPlayer.targetX =
+              this.mousePos.x / zoomScale + this.camera.x;
+            this.localPlayer.targetY =
+              this.mousePos.y / zoomScale + this.camera.y;
+          });
+
+          // Handle window resize
+          let resizeTimeout;
+          window.addEventListener("resize", () => {
+            // Debounce resize events to prevent excessive updates
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+              this.handleResize();
+            }, 100); // Wait 100ms after last resize event
+          });
+        }
+
+        startRenderLoop() {
+          const renderFrame = () => {
+            this.updateLocalPlayer(); // Update local player position
+            this.render(); // Render everything
+            requestAnimationFrame(renderFrame);
+          };
+          renderFrame();
+        }
+
+        startNetworkLoop() {
+          setInterval(() => {
+            this.sendNetworkUpdate();
+          }, this.networkSyncInterval);
+        }
+
+        updateLocalPlayer() {
+          // Check if cursor has been still long enough to enter drift mode
+          const now = Date.now();
+          const cursorStillTime = now - this.lastMouseMoveTime;
+          const shouldDrift = cursorStillTime > this.cursorStillThreshold;
+
+          // Update drift state
+          if (shouldDrift && !this.isDrifting) {
+            this.isDrifting = true;
+            console.log("Entering drift mode");
+          } else if (!shouldDrift && this.isDrifting) {
+            this.isDrifting = false;
+            console.log("Exiting drift mode");
+          }
+
+          // Movement parameters
+          const maxSpeed = Math.max(3, 8 - this.localPlayer.size * 0.1);
+          const acceleration = 0.3; // How quickly we accelerate toward target
+          const normalFriction = 0.92; // Normal friction when near cursor
+          const driftFriction = 0.995; // Much less friction when drifting (loses only 0.5% per frame)
+          const minDriftSpeed = 0.8; // Minimum speed when drifting
+
+          if (this.isDrifting) {
+            // Drift mode - maintain momentum, apply minimal friction
+            this.localPlayer.vx *= driftFriction;
+            this.localPlayer.vy *= driftFriction;
+
+            // Maintain minimum drift speed
+            const currentSpeed = Math.sqrt(
+              this.localPlayer.vx * this.localPlayer.vx +
+                this.localPlayer.vy * this.localPlayer.vy
+            );
+            if (currentSpeed > 0 && currentSpeed < minDriftSpeed) {
+              const scale = minDriftSpeed / currentSpeed;
+              this.localPlayer.vx *= scale;
+              this.localPlayer.vy *= scale;
+            }
+          } else {
+            // Normal mode - move toward cursor
+            const dx = this.localPlayer.targetX - this.localPlayer.x;
+            const dy = this.localPlayer.targetY - this.localPlayer.y;
+            const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
+
+            if (distanceToTarget > 2) {
+              // Accelerate toward target
+              const targetVx = (dx / distanceToTarget) * maxSpeed;
+              const targetVy = (dy / distanceToTarget) * maxSpeed;
+
+              // Apply acceleration toward target direction
+              this.localPlayer.vx +=
+                (targetVx - this.localPlayer.vx) * acceleration;
+              this.localPlayer.vy +=
+                (targetVy - this.localPlayer.vy) * acceleration;
+            } else {
+              // Apply normal friction when close to target
+              this.localPlayer.vx *= normalFriction;
+              this.localPlayer.vy *= normalFriction;
+            }
+          }
+
+          // Update position based on velocity
+          this.localPlayer.x += this.localPlayer.vx;
+          this.localPlayer.y += this.localPlayer.vy;
+
+          // Keep player in bounds
+          this.localPlayer.x = Math.max(
+            this.localPlayer.size,
+            Math.min(WORLD_WIDTH - this.localPlayer.size, this.localPlayer.x)
+          );
+          this.localPlayer.y = Math.max(
+            this.localPlayer.size,
+            Math.min(WORLD_HEIGHT - this.localPlayer.size, this.localPlayer.y)
+          );
+
+          // Apply velocity damping when hitting boundaries
+          if (
+            this.localPlayer.x <= this.localPlayer.size ||
+            this.localPlayer.x >= WORLD_WIDTH - this.localPlayer.size
+          ) {
+            this.localPlayer.vx *= -0.3; // Bounce with reduced velocity
+          }
+          if (
+            this.localPlayer.y <= this.localPlayer.size ||
+            this.localPlayer.y >= WORLD_HEIGHT - this.localPlayer.size
+          ) {
+            this.localPlayer.vy *= -0.3; // Bounce with reduced velocity
+          }
+
+          // Client-side food collision detection for immediate feedback
+          this.checkLocalFoodCollisions();
+
+          // Check island collisions and handle bouncing
+          this.checkIslandCollisions();
+
+          // Update camera to follow local player (adjusted for zoom)
+          const zoomScale = 1.12;
+          const effectiveWidth = window.innerWidth / zoomScale;
+          const effectiveHeight = window.innerHeight / zoomScale;
+
+          this.camera.x = this.localPlayer.x - effectiveWidth / 2;
+          this.camera.y = this.localPlayer.y - effectiveHeight / 2;
+          this.camera.x = Math.max(
+            0,
+            Math.min(WORLD_WIDTH - effectiveWidth, this.camera.x)
+          );
+          this.camera.y = Math.max(
+            0,
+            Math.min(WORLD_HEIGHT - effectiveHeight, this.camera.y)
+          );
+        }
+
+        checkLocalFoodCollisions() {
+          // Check collisions with food items that aren't already predicted as eaten
+          this.gameState.food.forEach((food) => {
+            if (!this.predictedEatenFood.has(food.id)) {
+              const dx = this.localPlayer.x - food.x;
+              const dy = this.localPlayer.y - food.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+
+              // Check if player is close enough AND big enough to eat the logo
+              if (
+                distance < this.localPlayer.size + food.size &&
+                this.localPlayer.size >= food.size
+              ) {
+                // Predict food is eaten - hide it immediately
+                this.predictedEatenFood.add(food.id);
+
+                // Predict size increase
+                this.localPlayer.size += 1;
+
+                // Call fake viem contract
+                if (window.eatFood) {
+                  window.eatFood();
                 }
-            }, 3000);
-            
-        }).catch(error => {
-            console.error("Failed to join session:", error);
+
+                // Send food eaten event to server
+                this.publish(this.sessionId, "foodEaten", {
+                  playerId: this.playerId,
+                  foodId: food.id,
+                  playerX: this.localPlayer.x,
+                  playerY: this.localPlayer.y,
+                });
+
+                console.log("Food eaten locally:", food.id);
+              }
+            }
+          });
+        }
+
+        checkIslandCollisions() {
+          // Check collisions with islands and apply bounce physics
+          this.gameState.islands.forEach((island) => {
+            const dx = this.localPlayer.x - island.x;
+            const dy = this.localPlayer.y - island.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = this.localPlayer.size + island.size;
+
+            if (distance < minDistance) {
+              // Collision detected - calculate bounce
+              const overlap = minDistance - distance;
+
+              // Normalize the collision vector
+              const nx = distance > 0 ? dx / distance : 1;
+              const ny = distance > 0 ? dy / distance : 0;
+
+              // Move player out of collision
+              this.localPlayer.x += nx * overlap;
+              this.localPlayer.y += ny * overlap;
+
+              // Apply bounce to velocity
+              const bounceStrength = 0.8;
+              const velocityAlongNormal =
+                this.localPlayer.vx * nx + this.localPlayer.vy * ny;
+
+              // Only bounce if moving toward the island
+              if (velocityAlongNormal < 0) {
+                this.localPlayer.vx -=
+                  velocityAlongNormal * nx * (1 + bounceStrength);
+                this.localPlayer.vy -=
+                  velocityAlongNormal * ny * (1 + bounceStrength);
+              }
+
+              // Add some friction to the bounce
+              this.localPlayer.vx *= 0.7;
+              this.localPlayer.vy *= 0.7;
+            }
+          });
+        }
+
+        sendNetworkUpdate() {
+          // Only send network updates periodically, not on every frame
+          const now = Date.now();
+          if (now - this.lastNetworkSync >= this.networkSyncInterval) {
+            this.lastNetworkSync = now;
+
+            // Send current position and target to server
+            this.publish(this.sessionId, "playerMove", {
+              playerId: this.playerId,
+              x: this.localPlayer.x,
+              y: this.localPlayer.y,
+              targetX: this.localPlayer.targetX,
+              targetY: this.localPlayer.targetY,
+            });
+          }
+        }
+
+        updateGameState(state) {
+          // Reconcile food predictions with server state
+          const serverFoodIds = new Set(state.food.map((f) => f.id));
+
+          // Check our predictions against server reality
+          for (let predictedFoodId of this.predictedEatenFood) {
+            if (serverFoodIds.has(predictedFoodId)) {
+              // Server still has this food - our prediction was wrong, remove from predicted set
+              this.predictedEatenFood.delete(predictedFoodId);
+              console.log(
+                "Food prediction corrected - food still exists:",
+                predictedFoodId
+              );
+            }
+            // If server doesn't have the food, our prediction was correct - keep it in the set
+          }
+
+          // Update other players with server data
+          this.gameState = state;
+
+          // Find our player in server data and reconcile if needed
+          const serverPlayer = state.players.find(
+            (p) => p.id === this.playerId
+          );
+          if (serverPlayer) {
+            // Simple reconciliation - if too far from server, adjust
+            const dx = serverPlayer.x - this.localPlayer.x;
+            const dy = serverPlayer.y - this.localPlayer.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > 50) {
+              // If too far from server position, snap back
+              this.localPlayer.x = serverPlayer.x;
+              this.localPlayer.y = serverPlayer.y;
+            }
+
+            // Always sync size from server (authoritative for food consumption)
+            this.localPlayer.size = serverPlayer.size;
+            this.localPlayer.color = serverPlayer.color;
+
+            // Update UI
+            document.getElementById("sizeDisplay").textContent = Math.floor(
+              serverPlayer.size
+            );
+          }
+
+          document.getElementById("playersCount").textContent =
+            state.players.length;
+        }
+
+        render() {
+          // Start performance measurement
+          this.perfStats.startFrame();
+
+          // Measure input latency
+          this.perfStats.measureInputLatency();
+
+          // Clear canvas
+          this.ctx.fillStyle = "#90EE90";
+          this.ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+          // Save context for camera transform and zoom
+          this.ctx.save();
+          this.ctx.scale(1.12, 1.12); // 12% zoom in
+          this.ctx.translate(-this.camera.x, -this.camera.y);
+
+          // Draw food (protocol logos)
+          this.gameState.food.forEach((food) => {
+            // Skip food that we predict has been eaten
+            if (!this.predictedEatenFood.has(food.id)) {
+              const logo = this.protocolLogos[food.logoType];
+              if (logo && logo.complete && logo.naturalWidth > 0) {
+                // Draw logo centered at food position with rotation
+                // Logo size can now be larger than players, with reasonable maximum
+                const logoSize = Math.min(food.size * 1.5, 50); // Max size of 50 for bigger variety
+
+                this.ctx.save();
+                this.ctx.translate(food.x, food.y);
+                this.ctx.rotate(food.angle || 0);
+                this.ctx.drawImage(
+                  logo,
+                  -logoSize / 2,
+                  -logoSize / 2,
+                  logoSize,
+                  logoSize
+                );
+                this.ctx.restore();
+              } else {
+                // Fallback to circle if logo not loaded or failed
+                this.ctx.fillStyle = "#FF6B6B";
+                this.ctx.beginPath();
+                this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
+                this.ctx.fill();
+              }
+            }
+          });
+
+          // Draw islands with SVGs
+          this.gameState.islands.forEach((island) => {
+            const islandLogo = this.islandLogos[island.islandType];
+            if (
+              islandLogo &&
+              islandLogo.complete &&
+              islandLogo.naturalWidth > 0
+            ) {
+              // Draw island SVG
+              this.ctx.save();
+              this.ctx.translate(island.x, island.y);
+              this.ctx.drawImage(
+                islandLogo,
+                -island.size,
+                -island.size,
+                island.size * 2,
+                island.size * 2
+              );
+              this.ctx.restore();
+            } else {
+              // Fallback to black circle if island SVG not loaded or failed
+              this.ctx.fillStyle = "#2F4F2F";
+              this.ctx.beginPath();
+              this.ctx.arc(island.x, island.y, island.size, 0, Math.PI * 2);
+              this.ctx.fill();
+            }
+
+            // Island outline
+            this.ctx.strokeStyle = "#000";
+            this.ctx.lineWidth = 1;
+            this.ctx.stroke();
+          });
+
+          // Draw other players (from server data)
+          this.gameState.players.forEach((player) => {
+            if (player.id !== this.playerId) {
+              // Don't draw our own player from server data
+              this.ctx.fillStyle = player.color;
+              this.ctx.beginPath();
+              this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+              this.ctx.fill();
+
+              // Player outline
+              this.ctx.strokeStyle = "#000";
+              this.ctx.lineWidth = 2;
+              this.ctx.stroke();
+            }
+          });
+
+          // Draw our own player from local prediction (most responsive)
+          this.ctx.fillStyle = this.localPlayer.color;
+          this.ctx.beginPath();
+          this.ctx.arc(
+            this.localPlayer.x,
+            this.localPlayer.y,
+            this.localPlayer.size,
+            0,
+            Math.PI * 2
+          );
+          this.ctx.fill();
+
+          // Highlight our own player
+          this.ctx.strokeStyle = "#FFF";
+          this.ctx.lineWidth = 3;
+          this.ctx.stroke();
+
+          // Draw black outline
+          this.ctx.strokeStyle = "#000";
+          this.ctx.lineWidth = 2;
+          this.ctx.stroke();
+
+          // Restore context
+          this.ctx.restore();
+
+          // Draw grid for reference (optional)
+          this.drawGrid();
+
+          // End performance measurement
+          this.perfStats.endFrame();
+        }
+
+        drawGrid() {
+          this.ctx.strokeStyle = "rgba(0,0,0,0.1)";
+          this.ctx.lineWidth = 1;
+
+          const gridSize = 100;
+          const zoomScale = 1.12;
+          const effectiveWidth = window.innerWidth / zoomScale;
+          const effectiveHeight = window.innerHeight / zoomScale;
+          const startX = -(this.camera.x % gridSize);
+          const startY = -(this.camera.y % gridSize);
+
+          for (let x = startX; x < effectiveWidth; x += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, effectiveHeight);
+            this.ctx.stroke();
+          }
+
+          for (let y = startY; y < effectiveHeight; y += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(effectiveWidth, y);
+            this.ctx.stroke();
+          }
+        }
+      }
+
+      // Start the game
+      MopeGameModel.register("MopeGameModel");
+      Multisynq.Session.join({
+        apiKey: API_KEY,
+        appId: "com.mopeio.clone",
+        model: MopeGameModel,
+        view: MopeGameView,
+        name: Multisynq.App.autoSession(),
+        password: Multisynq.App.autoPassword(),
+      })
+        .then((session) => {
+          console.log("Joined game session:", session.id);
+
+          // Debug: Log all available Multisynq.App methods
+          console.log(
+            "Available Multisynq.App methods:",
+            Object.keys(Multisynq.App)
+          );
+          console.log("Full Multisynq.App object:", Multisynq.App);
+
+          // Wait for session to be established, then create widget
+          setTimeout(() => {
+            console.log("Attempting to create widget dock...");
+
+            try {
+              // Try the standard widget dock first
+              Multisynq.App.makeWidgetDock();
+              console.log("makeWidgetDock() completed");
+
+              // Also try QR-specific methods
+              setTimeout(() => {
+                try {
+                  console.log("Trying makeQRCanvas...");
+                  if (typeof Multisynq.App.makeQRCanvas === "function") {
+                    Multisynq.App.makeQRCanvas();
+                    console.log("makeQRCanvas() completed");
+                  }
+
+                  console.log("Trying qrcode method...");
+                  if (typeof Multisynq.App.qrcode === "function") {
+                    const qrResult = Multisynq.App.qrcode();
+                    console.log("qrcode() result:", qrResult);
+                  }
+
+                  console.log("Trying makeSessionWidgets...");
+                  if (typeof Multisynq.App.makeSessionWidgets === "function") {
+                    Multisynq.App.makeSessionWidgets();
+                    console.log("makeSessionWidgets() completed");
+                  }
+                } catch (qrError) {
+                  console.error("QR method error:", qrError);
+                }
+              }, 500);
+
+              // Check if widget was actually created
+              setTimeout(() => {
+                const bodyChildren = Array.from(document.body.children);
+                console.log(
+                  "All body children after widget creation:",
+                  bodyChildren.map((el) => ({
+                    tagName: el.tagName,
+                    id: el.id,
+                    className: el.className,
+                    style: el.style.cssText,
+                    innerHTML:
+                      el.innerHTML.substring(0, 100) +
+                      (el.innerHTML.length > 100 ? "..." : ""),
+                  }))
+                );
+
+                // Look specifically for canvas elements (QR codes are often canvas)
+                const canvases = document.querySelectorAll("canvas");
+                console.log("Canvas elements found:", canvases.length);
+                canvases.forEach((canvas, i) => {
+                  console.log(`Canvas ${i}:`, {
+                    width: canvas.width,
+                    height: canvas.height,
+                    style: canvas.style.cssText,
+                    parent: canvas.parentElement,
+                  });
+                });
+              }, 2000);
+            } catch (error) {
+              console.error("makeWidgetDock error:", error);
+            }
+          }, 3000);
+        })
+        .catch((error) => {
+          console.error("Failed to join session:", error);
         });
     </script>
-</body>
-
+  </body>
 </html>
