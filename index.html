@@ -193,6 +193,102 @@
       #transactionDetails a:hover {
         text-decoration: underline;
       }
+
+      /* Orb Selection Modal */
+      #orbSelectionOverlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1001;
+      }
+
+      #orbSelectionModal {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        max-width: 500px;
+        width: 90%;
+      }
+
+      #orbSelectionModal h2 {
+        margin: 0 0 20px 0;
+        color: #333;
+        font-size: 24px;
+      }
+
+      #orbSelectionModal p {
+        color: #666;
+        margin-bottom: 20px;
+        font-size: 14px;
+      }
+
+      .orb-options {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      .orb-option {
+        background: #f8f9fa;
+        border: 3px solid transparent;
+        border-radius: 12px;
+        padding: 20px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .orb-option:hover {
+        background: #e9ecef;
+        transform: translateY(-2px);
+      }
+
+      .orb-option.selected {
+        border-color: #007bff;
+        background: #e7f3ff;
+      }
+
+      .orb-preview {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #ddd;
+      }
+
+      .orb-preview svg,
+      .orb-preview img {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+      }
+
+      .orb-name {
+        font-weight: bold;
+        color: #333;
+        font-size: 14px;
+      }
+
+      #orbCountdown {
+        color: #ff6b35;
+        font-weight: bold;
+        font-size: 16px;
+        margin-top: 15px;
+      }
     </style>
   </head>
 
@@ -226,6 +322,18 @@
           </div>
         </div>
         <div id="nextRoundCountdown">Next round starts in <span id="countdownTimer">10</span> seconds</div>
+      </div>
+    </div>
+
+    <!-- Orb Selection Overlay -->
+    <div id="orbSelectionOverlay">
+      <div id="orbSelectionModal">
+        <h2>Choose Your Orb</h2>
+        <p>Select your orb skin for the next round</p>
+        <div class="orb-options" id="orbOptions">
+          <!-- Orb options will be populated dynamically -->
+        </div>
+        <div id="orbCountdown">Choose within <span id="orbCountdownTimer">10</span> seconds</div>
       </div>
     </div>
 
@@ -377,6 +485,7 @@
           this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
           this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
           this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
+          this.subscribe(this.sessionId, "orbSelection", this.handleOrbSelection);
 
           // Spawn initial food and islands
           this.spawnFood(50);
@@ -406,6 +515,7 @@
             targetY: Math.random() * WORLD_HEIGHT,
             size: 15,
             color: this.getRandomColor(),
+            selectedSkin: data.selectedSkin || "orb1", // Default orb skin
           });
 
           console.log("Player joined:", playerId);
@@ -453,6 +563,15 @@
         handlePlayerLeave(data) {
           this.players.delete(data.playerId);
           this.publishGameStateThrottled();
+        }
+
+        handleOrbSelection(data) {
+          const player = this.players.get(data.playerId);
+          if (player) {
+            player.selectedSkin = data.selectedSkin;
+            console.log("Player", data.playerId, "selected orb:", data.selectedSkin);
+            this.publishGameStateThrottled();
+          }
         }
 
         handleFoodEaten(data) {
@@ -868,6 +987,17 @@
           ];
           this.loadIslandLogos();
 
+          // Load orb SVGs
+          this.orbLogos = {};
+          this.orbCanvases = {}; // Pre-rendered canvas cache for orbs
+          this.orbTypes = [
+            "orb1",
+            "orb2", 
+            "orb3",
+            "orb4"
+          ];
+          this.loadOrbLogos();
+
           // Game state
           this.gameState = { players: [], food: [], islands: [] };
           this.roundState = {
@@ -909,11 +1039,16 @@
             y: Math.random() * WORLD_HEIGHT,
             size: 15,
             color: "#FF6B6B",
+            selectedSkin: "orb1", // Default orb skin
             targetX: 0,
             targetY: 0,
             vx: 0, // velocity x
             vy: 0, // velocity y
           };
+
+          // Orb selection state
+          this.orbSelectionVisible = false;
+          this.orbCountdownTimer = null;
 
           // Network sync timing
           this.lastNetworkSync = 0;
@@ -946,10 +1081,16 @@
           // Join the game
           this.publish(this.sessionId, "playerJoin", {
             playerId: this.playerId,
+            selectedSkin: this.localPlayer.selectedSkin,
           });
 
           // Ensure proper sizing on initialization
           this.handleResize();
+
+          // Show orb selection for the first round after a brief delay
+          setTimeout(() => {
+            this.showFirstRoundOrbSelection();
+          }, 1000); // Give time for assets to load
 
           console.log("Game view initialized, player ID:", this.playerId);
         }
@@ -1019,6 +1160,49 @@
           // Cache the pre-rendered canvas
           this.islandCanvases[islandType] = canvas;
           console.log(`Pre-rendered ${islandType} to canvas for performance`);
+        }
+
+        loadOrbLogos() {
+          this.orbTypes.forEach((orbType) => {
+            const img = new Image();
+            img.onload = () => {
+              // Pre-render SVG to canvas for better performance
+              this.preRenderOrbCanvas(orbType, img);
+              console.log(
+                `Loaded ${orbType} orb (${
+                  Object.keys(this.orbLogos).filter(
+                    (k) =>
+                      this.orbLogos[k].complete &&
+                      this.orbLogos[k].naturalWidth > 0
+                  ).length
+                }/${this.orbTypes.length})`
+              );
+            };
+            img.onerror = () => {
+              console.log(`Failed to load ${orbType} orb`);
+              // Mark as failed so we don't try to draw it
+              this.orbLogos[orbType] = null;
+              this.orbCanvases[orbType] = null;
+            };
+            img.src = `assets/orbs/${orbType}.svg`;
+            this.orbLogos[orbType] = img;
+          });
+        }
+
+        preRenderOrbCanvas(orbType, img) {
+          // Create off-screen canvas for this orb type
+          const maxSize = 200; // Max player size * 2 for safety
+          const canvas = document.createElement('canvas');
+          canvas.width = maxSize;
+          canvas.height = maxSize;
+          const ctx = canvas.getContext('2d');
+          
+          // Draw SVG to canvas at maximum size
+          ctx.drawImage(img, 0, 0, maxSize, maxSize);
+          
+          // Cache the pre-rendered canvas
+          this.orbCanvases[orbType] = canvas;
+          console.log(`Pre-rendered ${orbType} orb to canvas for performance`);
         }
 
         handleResize() {
@@ -1453,8 +1637,15 @@
           const countdownElement = document.getElementById("countdownTimer");
           let countdown = 10;
           
+          // Show orb selection modal during countdown
+          this.showOrbSelectionModal();
+          
           const updateCountdown = () => {
             countdownElement.textContent = countdown;
+            // Also update orb selection countdown if visible
+            if (this.orbSelectionVisible) {
+              document.getElementById("orbCountdownTimer").textContent = countdown;
+            }
             countdown--;
             
             if (countdown >= 0) {
@@ -1463,10 +1654,179 @@
               // Countdown finished
               this.isCountdownRunning = false;
               this.countdownTimer = null;
+              // Hide orb selection modal
+              this.hideOrbSelectionModal();
             }
           };
           
           updateCountdown();
+        }
+
+        showOrbSelectionModal() {
+          if (this.orbSelectionVisible) return; // Already showing
+          
+          this.orbSelectionVisible = true;
+          const overlay = document.getElementById("orbSelectionOverlay");
+          const optionsContainer = document.getElementById("orbOptions");
+          
+                     // Reset modal text for between-rounds selection
+           document.querySelector("#orbSelectionModal h2").textContent = "Choose Your Orb";
+           document.querySelector("#orbSelectionModal p").textContent = "Click any orb to continue to next round";
+           document.getElementById("orbCountdown").innerHTML = 'Auto-continues in <span id="orbCountdownTimer">10</span> seconds';
+          
+          // Clear existing options
+          optionsContainer.innerHTML = "";
+          
+          // Create orb options
+          this.orbTypes.forEach((orbType) => {
+            const option = document.createElement("div");
+            option.className = "orb-option";
+            option.dataset.orbType = orbType;
+            
+            if (orbType === this.localPlayer.selectedSkin) {
+              option.classList.add("selected");
+            }
+            
+            // Create preview element
+            const preview = document.createElement("div");
+            preview.className = "orb-preview";
+            
+            // Try to show actual orb or fallback
+            const orbCanvas = this.orbCanvases[orbType];
+            if (orbCanvas) {
+              const previewCanvas = document.createElement("canvas");
+              previewCanvas.width = 50;
+              previewCanvas.height = 50;
+              const ctx = previewCanvas.getContext("2d");
+              ctx.drawImage(orbCanvas, 0, 0, 50, 50);
+              preview.appendChild(previewCanvas);
+            } else {
+              // Fallback colored circle
+              preview.style.backgroundColor = "#ddd";
+              preview.style.border = "2px solid #999";
+            }
+            
+            // Create name element
+            const name = document.createElement("div");
+            name.className = "orb-name";
+            name.textContent = `Orb ${orbType.charAt(orbType.length - 1)}`;
+            
+            option.appendChild(preview);
+            option.appendChild(name);
+            
+            // Add click handler
+            option.addEventListener("click", () => {
+              this.selectOrb(orbType);
+            });
+            
+            optionsContainer.appendChild(option);
+          });
+          
+          // Show the modal
+          overlay.style.display = "flex";
+        }
+
+        hideOrbSelectionModal() {
+          this.orbSelectionVisible = false;
+          const overlay = document.getElementById("orbSelectionOverlay");
+          overlay.style.display = "none";
+          
+          // Clear any countdown timer if player selected early
+          if (this.orbCountdownTimer) {
+            clearTimeout(this.orbCountdownTimer);
+            this.orbCountdownTimer = null;
+          }
+        }
+
+        selectOrb(orbType) {
+          // Update local player skin
+          this.localPlayer.selectedSkin = orbType;
+          
+          // Update UI selection
+          document.querySelectorAll(".orb-option").forEach(option => {
+            option.classList.remove("selected");
+          });
+          document.querySelector(`[data-orb-type="${orbType}"]`).classList.add("selected");
+          
+          // Send selection to server for sync with other players
+          this.publish(this.sessionId, "orbSelection", {
+            playerId: this.playerId,
+            selectedSkin: orbType
+          });
+          
+          console.log("Selected orb:", orbType);
+          
+          // Immediately hide the modal - player can continue playing
+          this.hideOrbSelectionModal();
+        }
+
+        showFirstRoundOrbSelection() {
+          // Only show if we haven't started any other orb selection
+          if (this.orbSelectionVisible || this.isCountdownRunning) return;
+          
+          // Show orb selection modal for the first round
+          this.orbSelectionVisible = true;
+          const overlay = document.getElementById("orbSelectionOverlay");
+          const optionsContainer = document.getElementById("orbOptions");
+          
+          // Update the modal text for first round
+          document.querySelector("#orbSelectionModal h2").textContent = "Choose Your Orb";
+          document.querySelector("#orbSelectionModal p").textContent = "Select your orb skin to start playing";
+          
+          // Clear existing options
+          optionsContainer.innerHTML = "";
+          
+          // Create orb options
+          this.orbTypes.forEach((orbType) => {
+            const option = document.createElement("div");
+            option.className = "orb-option";
+            option.dataset.orbType = orbType;
+            
+            if (orbType === this.localPlayer.selectedSkin) {
+              option.classList.add("selected");
+            }
+            
+            // Create preview element
+            const preview = document.createElement("div");
+            preview.className = "orb-preview";
+            
+            // Try to show actual orb or fallback
+            const orbCanvas = this.orbCanvases[orbType];
+            if (orbCanvas) {
+              const previewCanvas = document.createElement("canvas");
+              previewCanvas.width = 50;
+              previewCanvas.height = 50;
+              const ctx = previewCanvas.getContext("2d");
+              ctx.drawImage(orbCanvas, 0, 0, 50, 50);
+              preview.appendChild(previewCanvas);
+            } else {
+              // Fallback colored circle
+              preview.style.backgroundColor = "#ddd";
+              preview.style.border = "2px solid #999";
+            }
+            
+            // Create name element
+            const name = document.createElement("div");
+            name.className = "orb-name";
+            name.textContent = `Orb ${orbType.charAt(orbType.length - 1)}`;
+            
+            option.appendChild(preview);
+            option.appendChild(name);
+            
+                         // Add click handler
+             option.addEventListener("click", () => {
+               this.selectOrb(orbType);
+               // Modal will be hidden immediately by selectOrb()
+             });
+            
+            optionsContainer.appendChild(option);
+          });
+          
+                     // Update countdown text for first round (no time pressure)
+           document.getElementById("orbCountdown").innerHTML = 'Click any orb to start playing!';
+          
+          // Show the modal
+          overlay.style.display = "flex";
         }
 
         updateBlockchainStatus(status) {
@@ -1589,39 +1949,18 @@
           this.gameState.players.forEach((player) => {
             if (player.id !== this.playerId) {
               // Don't draw our own player from server data
-              this.ctx.fillStyle = player.color;
-              this.ctx.beginPath();
-              this.ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-              this.ctx.fill();
-
-              // Player outline
-              this.ctx.strokeStyle = "#000";
-              this.ctx.lineWidth = 2;
-              this.ctx.stroke();
+              this.drawPlayerOrb(player.x, player.y, player.size, player.selectedSkin || "orb1", false);
             }
           });
 
           // Draw our own player from local prediction (most responsive)
-          this.ctx.fillStyle = this.localPlayer.color;
-          this.ctx.beginPath();
-          this.ctx.arc(
+          this.drawPlayerOrb(
             this.localPlayer.x,
             this.localPlayer.y,
             this.localPlayer.size,
-            0,
-            Math.PI * 2
+            this.localPlayer.selectedSkin,
+            true // highlight our own player
           );
-          this.ctx.fill();
-
-          // Highlight our own player
-          this.ctx.strokeStyle = "#FFF";
-          this.ctx.lineWidth = 3;
-          this.ctx.stroke();
-
-          // Draw black outline
-          this.ctx.strokeStyle = "#000";
-          this.ctx.lineWidth = 2;
-          this.ctx.stroke();
 
           // Restore context
           this.ctx.restore();
@@ -1631,6 +1970,57 @@
 
           // End performance measurement
           this.perfStats.endFrame();
+        }
+
+        drawPlayerOrb(x, y, size, selectedSkin, isOwnPlayer = false) {
+          const orbCanvas = this.orbCanvases[selectedSkin];
+          if (orbCanvas) {
+            // Draw from pre-rendered orb canvas
+            this.ctx.save();
+            this.ctx.translate(x, y);
+            this.ctx.drawImage(
+              orbCanvas,
+              -size,
+              -size,
+              size * 2,
+              size * 2
+            );
+            this.ctx.restore();
+
+            // Add highlighting for own player
+            if (isOwnPlayer) {
+              this.ctx.strokeStyle = "#FFF";
+              this.ctx.lineWidth = 3;
+              this.ctx.beginPath();
+              this.ctx.arc(x, y, size, 0, Math.PI * 2);
+              this.ctx.stroke();
+            }
+
+            // Draw outline for all players
+            this.ctx.strokeStyle = "#000";
+            this.ctx.lineWidth = isOwnPlayer ? 2 : 1;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, size, 0, Math.PI * 2);
+            this.ctx.stroke();
+          } else {
+            // Fallback to colored circle if orb not loaded
+            this.ctx.fillStyle = isOwnPlayer ? this.localPlayer.color : "#4ECDC4";
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, size, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // Add highlighting for own player
+            if (isOwnPlayer) {
+              this.ctx.strokeStyle = "#FFF";
+              this.ctx.lineWidth = 3;
+              this.ctx.stroke();
+            }
+
+            // Draw outline
+            this.ctx.strokeStyle = "#000";
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+          }
         }
 
         drawGrid() {
@@ -1651,7 +2041,7 @@
             this.ctx.stroke();
           }
 
-          for (let y = startY; y < effectiveHeight; y += gridSize) {
+          for (let y = startY; y < effectiveWidth; y += gridSize) {
             this.ctx.beginPath();
             this.ctx.moveTo(0, y);
             this.ctx.lineTo(effectiveWidth, y);
