@@ -502,7 +502,7 @@
 
           // Round state
           this.currentRound = 1;
-          this.roundDuration = 15 * 1000; // 15 seconds in milliseconds
+          this.roundDuration = 4 * 60 * 1000; // 4 minutes in milliseconds
           this.roundStartTime = this.now();
           this.roundEndTime = this.roundStartTime + this.roundDuration;
           this.isRoundActive = true;
@@ -547,7 +547,7 @@
             y: Math.random() * WORLD_HEIGHT,
             targetX: Math.random() * WORLD_WIDTH,
             targetY: Math.random() * WORLD_HEIGHT,
-            size: 15,
+            size: 30,
             color: this.getRandomColor(),
             selectedSkin: data.selectedSkin || "orb1", // Default orb skin
           });
@@ -685,7 +685,7 @@
               id: foodId,
               x: Math.random() * WORLD_WIDTH,
               y: Math.random() * WORLD_HEIGHT,
-              size: 6 + Math.random() * 20, // Varied sizes between 6-26
+              size: 12 + Math.random() * 40, // Varied sizes between 12-52 (doubled)
               logoType: this.getRandomLogoType(),
               angle: Math.random() * Math.PI * 2, // Random starting angle
               rotationSpeed: 0.01 + Math.random() * 0.03, // Random rotation speed
@@ -929,7 +929,7 @@
 
           // Reset all players to starting size and random positions
           for (let [playerId, player] of this.players.entries()) {
-            player.size = 15;
+            player.size = 30;
             player.x = Math.random() * WORLD_WIDTH;
             player.y = Math.random() * WORLD_HEIGHT;
             player.targetX = player.x;
@@ -1108,7 +1108,7 @@
           this.gameState = { players: [], food: [], islands: [] };
           this.roundState = {
             currentRound: 1,
-            timeRemaining: 5 * 60 * 1000,
+            timeRemaining: 4 * 60 * 1000,
             isRoundActive: true,
             showingScores: false,
             scores: []
@@ -1143,7 +1143,7 @@
           this.localPlayer = {
             x: Math.random() * WORLD_WIDTH,
             y: Math.random() * WORLD_HEIGHT,
-            size: 15,
+            size: 30,
             color: "#FF6B6B",
             selectedSkin: "orb1", // Default orb skin
             targetX: 0,
@@ -1665,7 +1665,7 @@
           // Check if a new round started
           if (roundState.currentRound > previousRound && roundState.isRoundActive) {
             // New round started - reset local player state
-            this.localPlayer.size = 15;
+            this.localPlayer.size = 30;
             this.localPlayer.x = Math.random() * WORLD_WIDTH;
             this.localPlayer.y = Math.random() * WORLD_HEIGHT;
             this.localPlayer.targetX = this.localPlayer.x;
