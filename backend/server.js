@@ -50,49 +50,251 @@ const walletClient = createWalletClient({
   transport: http()
 });
 
-// Smart contract ABI (minimal for our needs)
+// Smart contract ABI (complete ABI)
 const CONTRACT_ABI = [
   {
-    "type": "function",
-    "name": "submitRoundScores",
-    "inputs": [
-      {"name": "sessionId", "type": "string"},
-      {"name": "roundNumber", "type": "uint256"},
-      {"name": "playerIds", "type": "string[]"},
-      {"name": "scores", "type": "uint256[]"}
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
   },
   {
-    "type": "function",
-    "name": "getRoundScores",
+    "anonymous": false,
     "inputs": [
-      {"name": "sessionId", "type": "string"},
-      {"name": "roundNumber", "type": "uint256"}
-    ],
-    "outputs": [
       {
-        "type": "tuple[]",
-        "components": [
-          {"name": "roundNumber", "type": "uint256"},
-          {"name": "playerId", "type": "string"},
-          {"name": "score", "type": "uint256"},
-          {"name": "timestamp", "type": "uint256"},
-          {"name": "sessionId", "type": "string"}
-        ]
+        "indexed": true,
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "playerCount",
+        "type": "uint256"
       }
     ],
-    "stateMutability": "view"
+    "name": "RoundSubmitted",
+    "type": "event"
   },
   {
-    "type": "event",
-    "name": "RoundSubmitted",
+    "anonymous": false,
     "inputs": [
-      {"name": "sessionId", "type": "string", "indexed": true},
-      {"name": "roundNumber", "type": "uint256", "indexed": true},
-      {"name": "playerCount", "type": "uint256", "indexed": false}
-    ]
+      {
+        "indexed": true,
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "playerId",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "score",
+        "type": "uint256"
+      }
+    ],
+    "name": "ScoreRecorded",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      },
+      {
+        "internalType": "string",
+        "name": "playerId",
+        "type": "string"
+      }
+    ],
+    "name": "getPlayerScore",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRoundScores",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "roundNumber",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "playerId",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "score",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "sessionId",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct GameScores.RoundScore[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "roundScores",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      },
+      {
+        "internalType": "string",
+        "name": "playerId",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "score",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "sessionId",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "roundNumber",
+        "type": "uint256"
+      },
+      {
+        "internalType": "string[]",
+        "name": "playerIds",
+        "type": "string[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "scores",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "submitRoundScores",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -231,6 +433,108 @@ app.get('/api/scores/:sessionId/:roundNumber', async (req, res) => {
     console.error('Error retrieving scores:', error);
     res.status(500).json({
       error: 'Failed to retrieve scores',
+      details: error.message
+    });
+  }
+});
+
+// New endpoint for getting scores with session top score
+app.get('/api/get-scores', async (req, res) => {
+  try {
+    const { sessionId, roundNumber } = req.query;
+    
+    if (!sessionId || !roundNumber) {
+      return res.status(400).json({
+        error: 'sessionId and roundNumber query parameters are required'
+      });
+    }
+    
+    console.log(`Fetching scores for session ${sessionId}, round ${roundNumber}`);
+    
+    // Get current round scores
+    const currentRoundScores = await publicClient.readContract({
+      address: process.env.CONTRACT_ADDRESS,
+      abi: CONTRACT_ABI,
+      functionName: 'getRoundScores',
+      args: [sessionId, BigInt(roundNumber)]
+    });
+    
+    // Format current round scores
+    const formattedRoundScores = currentRoundScores.map(score => ({
+      playerId: score.playerId,
+      score: Number(score.score),
+      timestamp: Number(score.timestamp),
+      roundNumber: Number(score.roundNumber)
+    })).sort((a, b) => b.score - a.score);
+    
+    // Calculate session top score by fetching all rounds for this session
+    const playerTotals = new Map();
+    const maxRoundToCheck = Math.max(10, parseInt(roundNumber)); // Check up to current round or 10, whichever is higher
+    
+    for (let round = 1; round <= maxRoundToCheck; round++) {
+      try {
+        const roundScores = await publicClient.readContract({
+          address: process.env.CONTRACT_ADDRESS,
+          abi: CONTRACT_ABI,
+          functionName: 'getRoundScores',
+          args: [sessionId, BigInt(round)]
+        });
+        
+        roundScores.forEach(score => {
+          const playerId = score.playerId;
+          const scoreValue = Number(score.score);
+          
+          if (!playerTotals.has(playerId)) {
+            playerTotals.set(playerId, {
+              playerId: playerId,
+              totalScore: 0,
+              roundCount: 0
+            });
+          }
+          
+          const playerData = playerTotals.get(playerId);
+          playerData.totalScore += scoreValue;
+          playerData.roundCount += 1;
+          playerTotals.set(playerId, playerData);
+        });
+      } catch (roundError) {
+        // Round doesn't exist yet or error fetching - skip it
+        if (round > parseInt(roundNumber)) {
+          break; // Stop if we've gone beyond current round
+        }
+      }
+    }
+    
+    // Find session top score
+    let sessionTopScore = null;
+    let highestTotal = 0;
+    
+    for (const [playerId, data] of playerTotals) {
+      if (data.totalScore > highestTotal) {
+        highestTotal = data.totalScore;
+        sessionTopScore = {
+          playerId: data.playerId,
+          totalScore: data.totalScore,
+          roundCount: data.roundCount
+        };
+      }
+    }
+    
+    console.log(`Found ${formattedRoundScores.length} scores for round ${roundNumber}`);
+    console.log(`Session top score:`, sessionTopScore);
+    
+    res.json({
+      sessionId,
+      roundNumber: parseInt(roundNumber),
+      roundScores: formattedRoundScores,
+      sessionTopScore: sessionTopScore,
+      retrievedAt: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error retrieving scores:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve scores from blockchain',
       details: error.message
     });
   }

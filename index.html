@@ -153,6 +153,34 @@
         font-size: 14px;
       }
 
+      #sessionTopScore {
+        margin: 20px 0;
+        padding: 15px;
+        background: linear-gradient(135deg, #ffd700, #ffed4e);
+        border-radius: 8px;
+        border: 2px solid #daa520;
+        text-align: center;
+      }
+
+      #sessionTopScore h3 {
+        margin: 0 0 8px 0;
+        color: #b8860b;
+        font-size: 16px;
+        font-weight: bold;
+      }
+
+      #sessionTopScore .top-player {
+        color: #8b4513;
+        font-size: 18px;
+        font-weight: bold;
+      }
+
+      #sessionTopScore .top-details {
+        color: #8b4513;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+
       #blockchainStatus {
         margin: 15px 0;
         padding: 10px;
@@ -312,6 +340,11 @@
       <div id="scoreBoard">
         <h2>Round Complete!</h2>
         <div id="scoreList"></div>
+        <div id="sessionTopScore" style="display: none;">
+          <h3>🏆 Session Leader</h3>
+          <div class="top-player" id="topPlayerName">-</div>
+          <div class="top-details" id="topPlayerDetails">-</div>
+        </div>
         <div id="blockchainStatus">
           <div id="blockchainMessage">⏳ Submitting scores to blockchain...</div>
           <div id="transactionDetails" style="display: none;">
@@ -476,6 +509,7 @@
           this.roundScores = new Map();
           this.showingScores = false;
           this.scoreDisplayDuration = 10 * 1000; // Show scores for 10 seconds
+          this.sessionTopScore = null; // Track session-wide top scorer
 
           // Global throttling
           this.lastGlobalGameStateUpdate = 0;
@@ -794,7 +828,7 @@
             message: "Submitting scores to blockchain..."
           });
 
-          // Submit to backend (fire-and-forget)
+          // Submit to backend
           const backendUrl = "http://localhost:3001";
           
           fetch(`${backendUrl}/api/submit-scores`, {
@@ -807,9 +841,80 @@
           .then(response => response.json())
           .then(result => {
             console.log("Scores successfully submitted to blockchain:", result);
+            
+            if (result.success) {
+              // Submission successful - broadcast status and fetch blockchain scores
+              this.publish(this.sessionId, "blockchainSubmission", {
+                success: true,
+                message: "Scores saved to blockchain!",
+                transactionHash: result.transactionHash,
+                blockNumber: result.blockNumber
+              });
+
+              // Fetch and display blockchain scores after successful submission
+              this.fetchBlockchainScores();
+            } else {
+              this.publish(this.sessionId, "blockchainSubmission", {
+                success: false,
+                message: "Failed to submit scores",
+                error: result.error
+              });
+            }
           })
           .catch(error => {
             console.error("Error submitting scores to blockchain:", error);
+            this.publish(this.sessionId, "blockchainSubmission", {
+              success: false,
+              message: "Failed to submit scores",
+              error: error.message
+            });
+          });
+        }
+
+        fetchBlockchainScores() {
+          const backendUrl = "http://localhost:3001";
+          const url = `${backendUrl}/api/get-scores?sessionId=${encodeURIComponent(this.sessionId)}&roundNumber=${this.currentRound}`;
+          
+          console.log("Fetching blockchain scores:", url);
+          
+          fetch(url)
+          .then(response => response.json())
+          .then(data => {
+            if (data.error) {
+              console.error("Error fetching blockchain scores:", data.error);
+              // Keep local scores if blockchain fetch fails
+              return;
+            }
+            
+            console.log("Received blockchain scores:", data);
+            
+            // Replace local scores with blockchain scores
+            this.roundScores.clear();
+            
+            data.roundScores.forEach(score => {
+              // Try to match with existing local player to preserve color, or use default
+              const existingPlayer = Array.from(this.players.values()).find(p => p.id === score.playerId);
+              const playerColor = existingPlayer ? existingPlayer.color : this.getRandomColor();
+              
+              this.roundScores.set(score.playerId, {
+                playerId: score.playerId,
+                score: score.score,
+                color: playerColor,
+                timestamp: score.timestamp
+              });
+            });
+            
+            // Store session top score for display
+            this.sessionTopScore = data.sessionTopScore;
+            
+            console.log("Updated scores from blockchain. Session top score:", this.sessionTopScore);
+            
+            // Broadcast updated round state with blockchain scores
+            this.publishRoundUpdate();
+          })
+          .catch(error => {
+            console.error("Error fetching blockchain scores:", error);
+            // Keep local scores if blockchain fetch fails
           });
         }
 
@@ -857,7 +962,8 @@
             timeRemaining: timeRemaining,
             isRoundActive: this.isRoundActive,
             showingScores: this.showingScores,
-            scores: Array.from(this.roundScores.values()).sort((a, b) => b.score - a.score)
+            scores: Array.from(this.roundScores.values()).sort((a, b) => b.score - a.score),
+            sessionTopScore: this.sessionTopScore
           };
         }
 
@@ -1621,9 +1727,29 @@
             scoreList.appendChild(scoreItem);
           });
 
+          // Display session top score if available
+          this.displaySessionTopScore();
+
           // Start countdown timer for next round (only if not already running)
           if (!this.isCountdownRunning) {
             this.startCountdownTimer();
+          }
+        }
+
+        displaySessionTopScore() {
+          const sessionTopScoreDiv = document.getElementById("sessionTopScore");
+          const topPlayerName = document.getElementById("topPlayerName");
+          const topPlayerDetails = document.getElementById("topPlayerDetails");
+          
+          // Check if we have session top score data from the round state
+          const sessionTopScore = this.roundState.sessionTopScore;
+          
+          if (sessionTopScore) {
+            sessionTopScoreDiv.style.display = "block";
+            topPlayerName.textContent = `Player ${sessionTopScore.playerId.slice(-4)}`;
+            topPlayerDetails.textContent = `Total: ${sessionTopScore.totalScore} points across ${sessionTopScore.roundCount} rounds`;
+          } else {
+            sessionTopScoreDiv.style.display = "none";
           }
         }
 
@@ -1709,7 +1835,15 @@
             // Create name element
             const name = document.createElement("div");
             name.className = "orb-name";
-            name.textContent = `Orb ${orbType.charAt(orbType.length - 1)}`;
+            
+            // Custom orb names
+            const orbNames = {
+              'orb1': 'Chog',
+              'orb2': 'Molandek',
+              'orb3': 'Salmonad',
+              'orb4': 'Keonegg'
+            };
+            name.textContent = orbNames[orbType] || `Orb ${orbType.charAt(orbType.length - 1)}`;
             
             option.appendChild(preview);
             option.appendChild(name);
@@ -1808,7 +1942,15 @@
             // Create name element
             const name = document.createElement("div");
             name.className = "orb-name";
-            name.textContent = `Orb ${orbType.charAt(orbType.length - 1)}`;
+            
+            // Custom orb names
+            const orbNames = {
+              'orb1': 'Chog',
+              'orb2': 'Molandek',
+              'orb3': 'Salmonad',
+              'orb4': 'Keonegg'
+            };
+            name.textContent = orbNames[orbType] || `Orb ${orbType.charAt(orbType.length - 1)}`;
             
             option.appendChild(preview);
             option.appendChild(name);
@@ -1986,22 +2128,6 @@
               size * 2
             );
             this.ctx.restore();
-
-            // Add highlighting for own player
-            if (isOwnPlayer) {
-              this.ctx.strokeStyle = "#FFF";
-              this.ctx.lineWidth = 3;
-              this.ctx.beginPath();
-              this.ctx.arc(x, y, size, 0, Math.PI * 2);
-              this.ctx.stroke();
-            }
-
-            // Draw outline for all players
-            this.ctx.strokeStyle = "#000";
-            this.ctx.lineWidth = isOwnPlayer ? 2 : 1;
-            this.ctx.beginPath();
-            this.ctx.arc(x, y, size, 0, Math.PI * 2);
-            this.ctx.stroke();
           } else {
             // Fallback to colored circle if orb not loaded
             this.ctx.fillStyle = isOwnPlayer ? this.localPlayer.color : "#4ECDC4";
