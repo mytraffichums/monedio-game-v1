@@ -73,6 +73,23 @@
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
       }
 
+      #cursorInstruction {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 14px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.6);
+        padding: 10px 15px;
+        border-radius: 5px;
+        transition: opacity 0.3s ease;
+      }
+
+      #cursorInstruction.hidden {
+        opacity: 0;
+      }
+
       #perfStats {
         position: absolute;
         top: 10px;
@@ -371,6 +388,10 @@
     </div>
 
     <canvas id="gameCanvas"></canvas>
+    
+    <div id="cursorInstruction">
+      Click to lock cursor • Press ESC to unlock
+    </div>
 
     <script>
       const API_KEY = "2GzxJfKu10qeIJcl0FsTY5AbhgXQj2ZgaXJhm6jHbK";
@@ -1341,14 +1362,56 @@
         }
 
         setupInput() {
-          // Mouse movement - just update target, don't send to network immediately
+          // Pointer lock state
+          this.isPointerLocked = false;
+
+          // Click to request pointer lock
+          this.canvas.addEventListener("click", () => {
+            if (!this.isPointerLocked) {
+              this.canvas.requestPointerLock();
+            }
+          });
+
+          // Handle pointer lock changes
+          document.addEventListener("pointerlockchange", () => {
+            this.isPointerLocked = document.pointerLockElement === this.canvas;
+            console.log("Pointer lock:", this.isPointerLocked ? "enabled" : "disabled");
+            
+            // Update instruction visibility
+            const instruction = document.getElementById("cursorInstruction");
+            if (this.isPointerLocked) {
+              instruction.classList.add("hidden");
+            } else {
+              instruction.classList.remove("hidden");
+            }
+          });
+
+          // Handle pointer lock errors
+          document.addEventListener("pointerlockerror", () => {
+            console.error("Pointer lock failed");
+          });
+
+          // Mouse movement - handle both locked and unlocked modes
           this.canvas.addEventListener("mousemove", (e) => {
             // Record input time for latency measurement
             this.perfStats.recordInputLatency();
 
-            const rect = this.canvas.getBoundingClientRect();
-            const newMouseX = e.clientX - rect.left;
-            const newMouseY = e.clientY - rect.top;
+            let newMouseX, newMouseY;
+
+            if (this.isPointerLocked) {
+              // In pointer lock mode, use relative movement
+              newMouseX = this.mousePos.x + e.movementX;
+              newMouseY = this.mousePos.y + e.movementY;
+
+              // Keep mouse position within canvas bounds
+              newMouseX = Math.max(0, Math.min(this.canvas.width, newMouseX));
+              newMouseY = Math.max(0, Math.min(this.canvas.height, newMouseY));
+            } else {
+              // Normal mode - use absolute coordinates
+              const rect = this.canvas.getBoundingClientRect();
+              newMouseX = e.clientX - rect.left;
+              newMouseY = e.clientY - rect.top;
+            }
 
             // Check if cursor actually moved
             if (
@@ -1369,6 +1432,13 @@
               this.mousePos.x / zoomScale + this.camera.x;
             this.localPlayer.targetY =
               this.mousePos.y / zoomScale + this.camera.y;
+          });
+
+          // Handle escape key to exit pointer lock
+          document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && this.isPointerLocked) {
+              document.exitPointerLock();
+            }
           });
 
           // Handle window resize
