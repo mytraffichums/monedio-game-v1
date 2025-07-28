@@ -53,14 +53,14 @@
       body {
         margin: 0;
         padding: 0;
-        background: #87ceeb;
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 50%, #1a252f 100%);
         font-family: Arial, sans-serif;
         overflow: hidden;
       }
 
       #gameCanvas {
         display: block;
-        background: #90ee90;
+        background: linear-gradient(45deg, #1e3a4a 0%, #2c4f63 50%, #1a3b4d 100%);
         cursor: none;
       }
 
@@ -75,15 +75,25 @@
 
       #cursorInstruction {
         position: absolute;
-        bottom: 20px;
+        top: 50%;
         left: 20px;
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 14px;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-        background: rgba(0, 0, 0, 0.6);
-        padding: 10px 15px;
-        border-radius: 5px;
-        transition: opacity 0.3s ease;
+        transform: translateY(-50%);
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 16px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 0.8);
+        padding: 12px 18px;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        user-select: none;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+      }
+
+      #cursorInstruction:hover {
+        background: rgba(0, 0, 0, 0.9);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: translateY(-50%) scale(1.05);
       }
 
       #cursorInstruction.hidden {
@@ -1372,6 +1382,15 @@
             }
           });
 
+          // Also allow clicking the instruction button directly for better responsiveness
+          const cursorInstruction = document.getElementById("cursorInstruction");
+          cursorInstruction.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (!this.isPointerLocked) {
+              this.canvas.requestPointerLock();
+            }
+          });
+
           // Handle pointer lock changes
           document.addEventListener("pointerlockchange", () => {
             this.isPointerLocked = document.pointerLockElement === this.canvas;
@@ -2088,8 +2107,12 @@
           // Measure input latency
           this.perfStats.measureInputLatency();
 
-          // Clear canvas
-          this.ctx.fillStyle = "#90EE90";
+          // Clear canvas with starry night gradient
+          const gradient = this.ctx.createLinearGradient(0, 0, window.innerWidth, window.innerHeight);
+          gradient.addColorStop(0, "#1e3a4a");
+          gradient.addColorStop(0.5, "#2c4f63");
+          gradient.addColorStop(1, "#1a3b4d");
+          this.ctx.fillStyle = gradient;
           this.ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
           // Save context for camera transform and zoom
