@@ -113,6 +113,203 @@
         font-family: "Courier New", monospace;
       }
 
+      #leaderboard {
+        position: absolute;
+        top: 150px;
+        right: 10px;
+        width: 200px;
+        background: rgba(0, 0, 0, 0.8);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 8px;
+        padding: 10px;
+        color: white;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+      }
+
+      #leaderboard h3 {
+        margin: 0 0 8px 0;
+        text-align: center;
+        color: #FFD700;
+        font-size: 14px;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+      }
+
+      .leaderboard-entry {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .leaderboard-entry:last-child {
+        border-bottom: none;
+      }
+
+      .leaderboard-rank {
+        font-weight: bold;
+        color: #64B5F6;
+        width: 20px;
+      }
+
+      .leaderboard-player {
+        flex: 1;
+        text-align: center;
+        font-weight: bold;
+        color: #FFFFFF;
+      }
+
+      .leaderboard-score {
+        font-weight: bold;
+        color: #4CAF50;
+        width: 40px;
+        text-align: right;
+      }
+
+      .leaderboard-entry.rank-1 .leaderboard-rank {
+        color: #FFD700;
+      }
+
+      .leaderboard-entry.rank-2 .leaderboard-rank {
+        color: #C0C0C0;
+      }
+
+      .leaderboard-entry.rank-3 .leaderboard-rank {
+        color: #CD7F32;
+      }
+
+      /* Chat System Styles */
+      #chatContainer {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        width: 732px;
+        height: 293px;
+        background: rgba(0, 0, 0, 0.85);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        font-family: Arial, sans-serif;
+        z-index: 100;
+        opacity: 0.9;
+        transition: opacity 0.3s ease;
+      }
+
+      #chatContainer:hover {
+        opacity: 1;
+      }
+
+      #chatHeader {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 6px 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        font-size: 14px;
+        font-weight: bold;
+        border-radius: 6px 6px 0 0;
+        text-align: center;
+      }
+
+      #chatMessages {
+        flex: 1;
+        padding: 8px;
+        overflow-y: auto;
+        color: white;
+        font-size: 13px;
+        line-height: 1.4;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+      }
+
+      #chatMessages::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      #chatMessages::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      #chatMessages::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+      }
+
+      .chat-message {
+        margin-bottom: 4px;
+        word-wrap: break-word;
+      }
+
+      .chat-message.own-message {
+        color: #4CAF50;
+      }
+
+      .chat-message .nickname {
+        font-weight: bold;
+        color: #64B5F6;
+      }
+
+      .chat-message .timestamp {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+      }
+
+      .system-message {
+        color: #FFA726;
+        font-style: italic;
+        text-align: center;
+        margin: 2px 0;
+      }
+
+      #chatInputContainer {
+        display: flex;
+        padding: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+        gap: 4px;
+      }
+
+      #chatInput {
+        flex: 1;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        padding: 6px 8px;
+        color: white;
+        font-size: 13px;
+        outline: none;
+      }
+
+      #chatInput::placeholder {
+        color: rgba(255, 255, 255, 0.6);
+      }
+
+      #chatInput:focus {
+        border-color: rgba(255, 255, 255, 0.6);
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      #chatSendButton {
+        background: #2196F3;
+        border: none;
+        border-radius: 4px;
+        color: white;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+
+      #chatSendButton:hover {
+        background: #1976D2;
+      }
+
+      #chatSendButton:disabled {
+        background: rgba(255, 255, 255, 0.2);
+        cursor: not-allowed;
+      }
+
       #scoreOverlay {
         position: absolute;
         top: 0;
@@ -362,6 +559,18 @@
       <div>Latency: <span id="latencyDisplay">--</span>ms</div>
     </div>
 
+    <!-- Leaderboard -->
+    <div id="leaderboard">
+      <h3>🏆 Top Players</h3>
+      <div id="leaderboardEntries">
+        <div class="leaderboard-entry">
+          <span class="leaderboard-rank">-</span>
+          <span class="leaderboard-player">-</span>
+          <span class="leaderboard-score">-</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Score Overlay -->
     <div id="scoreOverlay">
       <div id="scoreBoard">
@@ -401,6 +610,16 @@
     
     <div id="cursorInstruction">
       Click to lock cursor • Press ESC to unlock
+    </div>
+
+    <!-- Chat System -->
+    <div id="chatContainer">
+      <div id="chatHeader">Game Chat</div>
+      <div id="chatMessages"></div>
+      <div id="chatInputContainer">
+        <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
+        <button id="chatSendButton">Send</button>
+      </div>
     </div>
 
     <script>
@@ -545,12 +764,24 @@
           // Global throttling
           this.lastGlobalGameStateUpdate = 0;
 
+          // Chat state
+          this.messages = [];
+          this.maxMessages = 100; // Keep last 100 messages
+
+          // Leaderboard state - track fruit consumption per player
+          this.playerFruitCounts = new Map(); // playerId -> fruit count
+
           // Subscribe to player events
           this.subscribe(this.sessionId, "playerJoin", this.handlePlayerJoin);
           this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
           this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
           this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
           this.subscribe(this.sessionId, "orbSelection", this.handleOrbSelection);
+
+          // Subscribe to chat events
+          this.subscribe(this.sessionId, "sendMessage", this.handleMessage);
+          this.subscribe(this.sessionId, "view-join", this.handleUserJoin);
+          this.subscribe(this.sessionId, "view-exit", this.handleUserLeave);
 
           // Spawn initial food and islands
           this.spawnFood(50);
@@ -566,6 +797,9 @@
           this.future(1000).roundTimerLoop();
 
           // Periodic broadcast removed - game states sent on events only
+
+          // Initialize empty leaderboard
+          this.publishLeaderboard();
 
           console.log("Game model initialized");
         }
@@ -583,8 +817,12 @@
             selectedSkin: data.selectedSkin || "orb1", // Default orb skin
           });
 
+          // Initialize fruit count for new player
+          this.playerFruitCounts.set(playerId, 0);
+
           console.log("Player joined:", playerId);
           this.publishGameStateThrottled();
+          this.publishLeaderboard();
         }
 
         handlePlayerMove(data) {
@@ -627,7 +865,9 @@
 
         handlePlayerLeave(data) {
           this.players.delete(data.playerId);
+          // Keep fruit count for rejoining players, so don't delete from playerFruitCounts
           this.publishGameStateThrottled();
+          this.publishLeaderboard();
         }
 
         handleOrbSelection(data) {
@@ -637,6 +877,87 @@
             console.log("Player", data.playerId, "selected orb:", data.selectedSkin);
             this.publishGameStateThrottled();
           }
+        }
+
+        // Chat handlers
+        handleMessage(data) {
+          const { userId, text } = data;
+          
+          // Validate message
+          if (!text || text.trim().length === 0) return;
+          if (text.length > 200) return; // Length limit
+          
+          // Create player nickname from player ID (last 4 characters)
+          const nickname = userId.slice(-4);
+          
+          const message = {
+            id: this.generateMessageId(),
+            userId,
+            nickname,
+            text: text.trim(),
+            timestamp: this.now()
+          };
+          
+          // Add to message history
+          this.messages.push(message);
+          
+          // Trim old messages if needed
+          if (this.messages.length > this.maxMessages) {
+            this.messages = this.messages.slice(-this.maxMessages);
+          }
+          
+          // Broadcast to all users
+          this.publish(this.sessionId, "newMessage", message);
+        }
+
+        handleUserJoin(viewId) {
+          // Send recent messages to new user
+          const recentMessages = this.messages.slice(-20); // Last 20 messages
+          this.publish(viewId, "messageHistory", recentMessages);
+          
+          // Announce user joined
+          const nickname = viewId.slice(-4);
+          this.publish(this.sessionId, "userJoined", {
+            userId: viewId,
+            nickname: nickname
+          });
+        }
+
+        handleUserLeave(viewId) {
+          // Announce user left
+          const nickname = viewId.slice(-4);
+          this.publish(this.sessionId, "userLeft", {
+            userId: viewId,
+            nickname: nickname
+          });
+        }
+
+        generateMessageId() {
+          return `msg_${this.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+
+        publishLeaderboard() {
+          // Get top 3 players by fruit count
+          const leaderboardData = [];
+          
+          for (let [playerId, fruitCount] of this.playerFruitCounts.entries()) {
+            // Only include players who are currently in the game
+            if (this.players.has(playerId)) {
+              leaderboardData.push({
+                playerId: playerId,
+                fruitCount: fruitCount
+              });
+            }
+          }
+          
+          // Sort by fruit count (descending)
+          leaderboardData.sort((a, b) => b.fruitCount - a.fruitCount);
+          
+          // Take top 3
+          const topPlayers = leaderboardData.slice(0, 3);
+          
+          // Publish to all players
+          this.publish(this.sessionId, "leaderboardUpdate", topPlayers);
         }
 
         handleFoodEaten(data) {
@@ -659,6 +980,10 @@
               this.food.delete(foodId);
               player.size += 1;
 
+              // Increment fruit count for leaderboard
+              const currentCount = this.playerFruitCounts.get(playerId) || 0;
+              this.playerFruitCounts.set(playerId, currentCount + 1);
+
               // Spawn new food to replace eaten one
               this.spawnFood(1);
               console.log(
@@ -674,6 +999,7 @@
 
               // Send immediate update for food consumption
               this.publishGameStateThrottled();
+              this.publishLeaderboard();
             } else if (distance < player.size + food.size) {
               console.log(
                 "Player too small to eat food:",
@@ -702,8 +1028,15 @@
               this.food.delete(foodId);
               player.size += 1;
 
+              // Increment fruit count for leaderboard
+              const currentCount = this.playerFruitCounts.get(player.id) || 0;
+              this.playerFruitCounts.set(player.id, currentCount + 1);
+
               // Spawn new food to replace eaten one
               this.spawnFood(1);
+              
+              // Update leaderboard
+              this.publishLeaderboard();
               break;
             }
           }
@@ -958,6 +1291,12 @@
           this.showingScores = false;
           this.roundScores.clear();
 
+          // Reset fruit counts for new round
+          this.playerFruitCounts.clear();
+          for (let playerId of this.players.keys()) {
+            this.playerFruitCounts.set(playerId, 0);
+          }
+
           // Reset all players to starting size and random positions
           for (let [playerId, player] of this.players.entries()) {
             player.size = 30;
@@ -974,6 +1313,7 @@
 
           // Broadcast new round start
           this.publishRoundUpdate();
+          this.publishLeaderboard();
         }
 
         publishRoundUpdate() {
@@ -1206,8 +1546,33 @@
             this.updateBlockchainStatus(status)
           );
 
+          // Subscribe to chat events
+          this.subscribe(this.sessionId, "newMessage", (message) =>
+            this.displayMessage(message)
+          );
+          this.subscribe(this.sessionId, "messageHistory", (messages) =>
+            this.loadMessageHistory(messages)
+          );
+          this.subscribe(this.sessionId, "userJoined", (data) =>
+            this.announceUserJoined(data)
+          );
+          this.subscribe(this.sessionId, "userLeft", (data) =>
+            this.announceUserLeft(data)
+          );
+
+          // Subscribe to leaderboard updates
+          this.subscribe(this.sessionId, "leaderboardUpdate", (topPlayers) =>
+            this.updateLeaderboard(topPlayers)
+          );
+
           // Setup input
           this.setupInput();
+
+          // Setup chat
+          this.setupChat();
+
+          // Setup leaderboard
+          this.setupLeaderboard();
 
           // Start render loop - using requestAnimationFrame for smooth 60fps
           this.startRenderLoop();
@@ -1808,7 +2173,7 @@
               <div class="player-info">
                 ${medal}
                 <div class="player-color" style="background-color: ${score.color}"></div>
-                <span>Player ${score.playerId.slice(-4)}</span>
+                <span>${score.playerId.slice(-4)}</span>
               </div>
               <div class="score-value">${score.score}</div>
             `;
@@ -1835,7 +2200,7 @@
           
           if (sessionTopScore) {
             sessionTopScoreDiv.style.display = "block";
-            topPlayerName.textContent = `Player ${sessionTopScore.playerId.slice(-4)}`;
+            topPlayerName.textContent = sessionTopScore.playerId.slice(-4);
             topPlayerDetails.textContent = `Total: ${sessionTopScore.totalScore} points across ${sessionTopScore.roundCount} rounds`;
           } else {
             sessionTopScoreDiv.style.display = "none";
@@ -2100,6 +2465,139 @@
           }
         }
 
+        // Chat methods
+        setupChat() {
+          this.chatInput = document.getElementById('chatInput');
+          this.chatSendButton = document.getElementById('chatSendButton');
+          this.chatMessages = document.getElementById('chatMessages');
+
+          // Setup event listeners
+          this.chatSendButton.addEventListener('click', () => this.sendMessage());
+          this.chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              this.sendMessage();
+            }
+          });
+        }
+
+        sendMessage() {
+          const text = this.chatInput.value.trim();
+          if (!text) return;
+
+          this.publish(this.sessionId, "sendMessage", {
+            userId: this.playerId,
+            text
+          });
+
+          this.chatInput.value = '';
+          this.chatInput.focus();
+        }
+
+        displayMessage(message) {
+          const messageElement = this.createMessageElement(message);
+          this.chatMessages.appendChild(messageElement);
+          this.scrollChatToBottom();
+        }
+
+        createMessageElement(message) {
+          const div = document.createElement('div');
+          div.className = 'chat-message';
+          if (message.userId === this.playerId) {
+            div.classList.add('own-message');
+          }
+
+          const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+
+          div.innerHTML = `
+            <span class="nickname">${this.escapeHtml(message.nickname)}:</span>
+            <span class="timestamp">${time}</span><br>
+            ${this.escapeHtml(message.text)}
+          `;
+
+          return div;
+        }
+
+        loadMessageHistory(messages) {
+          this.chatMessages.innerHTML = '';
+          messages.forEach(message => {
+            const messageElement = this.createMessageElement(message);
+            this.chatMessages.appendChild(messageElement);
+          });
+          this.scrollChatToBottom();
+        }
+
+        announceUserJoined(data) {
+          const div = document.createElement('div');
+          div.className = 'system-message';
+          div.textContent = `${data.nickname} joined the game`;
+          this.chatMessages.appendChild(div);
+          this.scrollChatToBottom();
+        }
+
+        announceUserLeft(data) {
+          const div = document.createElement('div');
+          div.className = 'system-message';
+          div.textContent = `${data.nickname} left the game`;
+          this.chatMessages.appendChild(div);
+          this.scrollChatToBottom();
+        }
+
+        scrollChatToBottom() {
+          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        }
+
+        escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        }
+
+        // Leaderboard methods
+        setupLeaderboard() {
+          this.leaderboardEntries = document.getElementById('leaderboardEntries');
+        }
+
+        updateLeaderboard(topPlayers) {
+          // Clear existing entries
+          this.leaderboardEntries.innerHTML = '';
+          
+          if (topPlayers.length === 0) {
+            // Show empty state
+            const emptyEntry = document.createElement('div');
+            emptyEntry.className = 'leaderboard-entry';
+            emptyEntry.innerHTML = `
+              <span class="leaderboard-rank">-</span>
+              <span class="leaderboard-player">No players</span>
+              <span class="leaderboard-score">-</span>
+            `;
+            this.leaderboardEntries.appendChild(emptyEntry);
+            return;
+          }
+          
+          // Add top players
+          topPlayers.forEach((player, index) => {
+            const rank = index + 1;
+            const entry = document.createElement('div');
+            entry.className = `leaderboard-entry rank-${rank}`;
+            
+            const rankDisplay = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
+            const playerName = player.playerId.slice(-4);
+            
+            entry.innerHTML = `
+              <span class="leaderboard-rank">${rankDisplay}</span>
+              <span class="leaderboard-player">${playerName}</span>
+              <span class="leaderboard-score">${player.fruitCount}</span>
+            `;
+            
+            this.leaderboardEntries.appendChild(entry);
+          });
+        }
+
         render() {
           // Start performance measurement
           this.perfStats.startFrame();
@@ -2184,7 +2682,7 @@
           this.gameState.players.forEach((player) => {
             if (player.id !== this.playerId) {
               // Don't draw our own player from server data
-              this.drawPlayerOrb(player.x, player.y, player.size, player.selectedSkin || "orb1", false);
+              this.drawPlayerOrb(player.x, player.y, player.size, player.selectedSkin || "orb1", false, player.id);
             }
           });
 
@@ -2194,7 +2692,8 @@
             this.localPlayer.y,
             this.localPlayer.size,
             this.localPlayer.selectedSkin,
-            true // highlight our own player
+            true, // highlight our own player
+            this.playerId
           );
 
           // Restore context
@@ -2207,7 +2706,7 @@
           this.perfStats.endFrame();
         }
 
-        drawPlayerOrb(x, y, size, selectedSkin, isOwnPlayer = false) {
+        drawPlayerOrb(x, y, size, selectedSkin, isOwnPlayer = false, playerId = null) {
           const orbCanvas = this.orbCanvases[selectedSkin];
           if (orbCanvas) {
             // Draw from pre-rendered orb canvas
@@ -2239,6 +2738,27 @@
             this.ctx.strokeStyle = "#000";
             this.ctx.lineWidth = 2;
             this.ctx.stroke();
+          }
+
+          // Draw player ID under the orb
+          if (playerId) {
+            const playerName = playerId.slice(-4);
+            this.ctx.save();
+            
+            // Set text properties
+            this.ctx.fillStyle = isOwnPlayer ? "#FFD700" : "#FFFFFF";
+            this.ctx.strokeStyle = "#000000";
+            this.ctx.lineWidth = 2;
+            this.ctx.font = "bold 12px Arial";
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "top";
+            
+            // Draw text with outline for better visibility
+            const textY = y + size + 5;
+            this.ctx.strokeText(playerName, x, textY);
+            this.ctx.fillText(playerName, x, textY);
+            
+            this.ctx.restore();
           }
         }
 
