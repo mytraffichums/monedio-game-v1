@@ -627,115 +627,6 @@
       const WORLD_WIDTH = 2000;
       const WORLD_HEIGHT = 2000;
 
-      // Global Constants for Multisynq session synchronization
-      const Q = Multisynq.Constants;
-      Q.TICK_MS = 50;        // milliseconds per server movement tick (20Hz) 
-      Q.SPEED = 0.15;        // movement speed in pixels per millisecond
-      Q.CLOSE = 2.0;         // minimum distance in pixels to target (arrival threshold)
-      Q.SMOOTH = 0.05;       // smoothing factor between old and new positions (0 < SMOOTH <= 1)
-
-      // Pure utility functions for shared use between model and view
-      function add(a, b) {
-        return { x: (a.x + b.x), y: (a.y + b.y) };
-      }
-
-      function subtract(a, b) {
-        return { x: (a.x - b.x), y: (a.y - b.y) };
-      }
-
-      function magnitude(vector) {
-        return Math.sqrt(vector.x * vector.x + vector.y * vector.y);
-      }
-
-      function normalize(vector) {
-        const mag = magnitude(vector);
-        if (mag === 0) return { x: 0, y: 0 };
-        return { x: vector.x / mag, y: vector.y / mag };
-      }
-
-      function scale(vector, factor) {
-        return { x: vector.x * factor, y: vector.y * factor };
-      }
-
-      function dotProduct(a, b) {
-        return a.x * b.x + a.y * b.y;
-      }
-
-      function lerp(a, b, t) {
-        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-      }
-
-      // PlayerPawn class for smooth interpolated player representation
-      class PlayerPawn {
-        constructor(actor, view) {
-          this.actor = actor;
-          this.view = view;
-          this.playerId = actor.id;
-          
-          // Copy initial position from actor
-          this.position = { x: actor.x, y: actor.y };
-          this.velocity = { x: actor.vx || 0, y: actor.vy || 0 };
-          
-          // Track when actor last moved for extrapolation
-          this.lastMoved = this.view.viewTime || performance.now();
-          
-          // Subscribe to actor movement with frame optimization
-          this.view.subscribe(this.playerId, {
-            event: "playerMoved", 
-            handling: "oncePerFrame"
-          }, this.handleActorMoved.bind(this));
-          
-          console.log("Created pawn for player:", this.playerId);
-        }
-        
-        handleActorMoved(data) {
-          // Update velocity and timestamp when actor moves
-          this.velocity.x = data.velocity.x;
-          this.velocity.y = data.velocity.y;
-          this.lastMoved = this.view.viewTime || performance.now();
-        }
-        
-        update() {
-          // Calculate extrapolated position based on time since last update
-          const currentTime = this.view.viewTime || performance.now();
-          const deltaTime = currentTime - this.lastMoved;
-          
-          // Extrapolate actor position using velocity
-          const actorPos = { x: this.actor.x, y: this.actor.y };
-          const velocityDelta = scale(this.velocity, deltaTime);
-          const extrapolatedPos = add(actorPos, velocityDelta);
-          
-          // Interpolate between current pawn position and extrapolated position
-          this.position = lerp(this.position, extrapolatedPos, Q.SMOOTH);
-          
-          // Keep in bounds
-          this.position.x = Math.max(this.actor.size, 
-            Math.min(WORLD_WIDTH - this.actor.size, this.position.x));
-          this.position.y = Math.max(this.actor.size, 
-            Math.min(WORLD_HEIGHT - this.actor.size, this.position.y));
-        }
-        
-        render(ctx, camera) {
-          // Delegate to view's drawing method using smooth position
-          this.view.drawPlayerOrb(
-            this.position.x, 
-            this.position.y, 
-            this.actor.size, 
-            this.actor.selectedSkin || "orb1", 
-            this.playerId === this.view.playerId, // highlight own player
-            this.playerId
-          );
-        }
-        
-        destroy() {
-          // Clean up subscriptions
-          if (this.view.unsubscribe) {
-            this.view.unsubscribe(this.playerId, "playerMoved", this.handleActorMoved);
-          }
-          console.log("Destroyed pawn for player:", this.playerId);
-        }
-      }
-
       // Performance Stats Class
       class PerformanceStats {
         constructor() {
@@ -1198,23 +1089,17 @@
         }
 
         updateServerMovement() {
-          // Update all players' positions on server-side using smooth movement
+          // Update all players' positions on server-side
           for (let [playerId, player] of this.players.entries()) {
             if (player.targetX !== undefined && player.targetY !== undefined) {
-              const target = { x: player.targetX, y: player.targetY };
-              const position = { x: player.x, y: player.y };
-              const delta = subtract(target, position);
-              const distance = magnitude(delta);
+              const dx = player.targetX - player.x;
+              const dy = player.targetY - player.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
 
-              if (distance > Q.CLOSE) {
-                // Calculate velocity using our constants
-                const unit = normalize(delta);
-                const velocity = scale(unit, Q.SPEED * Q.TICK_MS);
-                
-                // Update position
-                const newPos = add(position, velocity);
-                player.x = newPos.x;
-                player.y = newPos.y;
+              if (distance > 2) {
+                const moveSpeed = Math.max(1, 5 - player.size * 0.1);
+                player.x += (dx / distance) * moveSpeed * 0.5; // Slower server movement
+                player.y += (dy / distance) * moveSpeed * 0.5;
 
                 // Keep player in bounds
                 player.x = Math.max(
@@ -1226,23 +1111,8 @@
                   Math.min(WORLD_HEIGHT - player.size, player.y)
                 );
 
-                // Store velocity for client interpolation
-                player.vx = velocity.x / Q.TICK_MS; // pixels per ms
-                player.vy = velocity.y / Q.TICK_MS;
-
                 // Check island collisions on server side
                 this.checkServerIslandCollisions(player);
-
-                // Publish movement event with timestamp for view smoothing
-                this.publish(playerId, "playerMoved", {
-                  timestamp: this.now(),
-                  position: { x: player.x, y: player.y },
-                  velocity: { x: player.vx, y: player.vy }
-                });
-              } else {
-                // Player arrived at target, stop movement
-                player.vx = 0;
-                player.vy = 0;
               }
             }
           }
@@ -1258,8 +1128,8 @@
             }
           }
 
-          // Schedule next update using constant
-          this.future(Q.TICK_MS).updateServerMovement();
+          // Schedule next update
+          this.future(50).updateServerMovement(); // 20Hz server updates
         }
 
         roundTimerLoop() {
@@ -1717,12 +1587,6 @@
           // Network sync timing
           this.lastNetworkSync = 0;
           this.networkSyncInterval = 100; // Send position every 100ms (10Hz)
-          
-          // Player pawns for smooth interpolation (Actor-Pawn pattern)
-          this.playerPawns = new Map();
-          
-          // Track view time for smooth interpolation
-          this.viewTime = performance.now();
 
           // Subscribe to game updates
           this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
@@ -1772,15 +1636,6 @@
 
           // Start network sync loop - separate from rendering
           this.startNetworkLoop();
-
-          // Initialize pawns for any existing players (view initialization pattern)
-          if (this.model && this.model.players) {
-            this.model.players.forEach(player => {
-              const pawn = new PlayerPawn(player, this);
-              this.playerPawns.set(player.id, pawn);
-              console.log("Initialized pawn for existing player:", player.id);
-            });
-          }
 
           // Join the game
           this.publish(this.sessionId, "playerJoin", {
@@ -2278,9 +2133,6 @@
 
           // Update other players with server data
           this.gameState = state;
-          
-          // Manage player pawns based on game state changes
-          this.managePawns(state.players);
 
           // Update round state if included
           if (state.round) {
@@ -2884,17 +2736,13 @@
             }
           });
 
-          // Update view time for interpolation
-          this.viewTime = performance.now();
-          
-          // Update and draw all player pawns (smooth interpolated positions)
-          for (let [playerId, pawn] of this.playerPawns.entries()) {
-            pawn.update(); // Calculate smooth position
-            if (playerId !== this.playerId) {
-              // Draw other players using smooth pawn positions
-              pawn.render(this.ctx, this.camera);
+          // Draw other players (from server data)
+          this.gameState.players.forEach((player) => {
+            if (player.id !== this.playerId) {
+              // Don't draw our own player from server data
+              this.drawPlayerOrb(player.x, player.y, player.size, player.selectedSkin || "orb1", false, player.id);
             }
-          }
+          });
 
           // Draw our own player from local prediction (most responsive)
           this.drawPlayerOrb(
@@ -2914,34 +2762,6 @@
 
           // End performance measurement
           this.perfStats.endFrame();
-        }
-
-        managePawns(serverPlayers) {
-          // Create set of current server player IDs
-          const serverPlayerIds = new Set(serverPlayers.map(p => p.id));
-          
-          // Remove pawns for players that left
-          for (let [playerId, pawn] of this.playerPawns.entries()) {
-            if (!serverPlayerIds.has(playerId)) {
-              pawn.destroy();
-              this.playerPawns.delete(playerId);
-              console.log("Removed pawn for player:", playerId);
-            }
-          }
-          
-          // Create pawns for new players and update existing ones
-          serverPlayers.forEach(player => {
-            if (!this.playerPawns.has(player.id)) {
-              // Create new pawn for new player
-              const pawn = new PlayerPawn(player, this);
-              this.playerPawns.set(player.id, pawn);
-              console.log("Created pawn for new player:", player.id);
-            } else {
-              // Update existing pawn's actor reference 
-              const pawn = this.playerPawns.get(player.id);
-              pawn.actor = player;
-            }
-          });
         }
 
         drawPlayerOrb(x, y, size, selectedSkin, isOwnPlayer = false, playerId = null) {
@@ -3036,7 +2856,6 @@
         view: MopeGameView,
         name: Multisynq.App.autoSession(),
         password: Multisynq.App.autoPassword(),
-        tps: 1000 / Q.TICK_MS, // Set heartbeat rate to match model tick frequency (20 tps)
       })
         .then((session) => {
           console.log("Joined game session:", session.id);
