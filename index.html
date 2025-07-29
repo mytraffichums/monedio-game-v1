@@ -752,7 +752,7 @@
 
           // Round state
           this.currentRound = 1;
-          this.roundDuration = 4 * 60 * 1000; // 4 minutes in milliseconds
+          this.roundDuration = 1 * 60 * 1000; // 4 minutes in milliseconds
           this.roundStartTime = this.now();
           this.roundEndTime = this.roundStartTime + this.roundDuration;
           this.isRoundActive = true;
@@ -760,6 +760,12 @@
           this.showingScores = false;
           this.scoreDisplayDuration = 10 * 1000; // Show scores for 10 seconds
           this.sessionTopScore = null; // Track session-wide top scorer
+
+          // Blockchain submission state
+          this.blockchainSubmissionStatus = null; // null, 'pending', 'success', 'error'
+          this.blockchainSubmissionData = null;
+          this.shouldFetchBlockchainScores = false;
+          this.shouldPublishRoundUpdate = false;
 
           // Global throttling
           this.lastGlobalGameStateUpdate = 0;
@@ -1141,6 +1147,21 @@
             }
           }
 
+          // Check for blockchain submission status updates
+          this.checkBlockchainSubmissionStatus();
+
+          // Check if we need to fetch blockchain scores
+          if (this.shouldFetchBlockchainScores) {
+            this.shouldFetchBlockchainScores = false;
+            this.fetchBlockchainScores();
+          }
+
+          // Check if we need to publish round update after blockchain score fetch
+          if (this.shouldPublishRoundUpdate) {
+            this.shouldPublishRoundUpdate = false;
+            this.publishRoundUpdate();
+          }
+
           // Continue the timer loop
           this.future(1000).roundTimerLoop();
         }
@@ -1186,14 +1207,15 @@
 
           console.log("Submitting scores to blockchain:", scoreData);
 
-          // Immediately broadcast that submission is in progress
+          // Set status to pending and immediately broadcast
+          this.blockchainSubmissionStatus = 'pending';
           this.publish(this.sessionId, "blockchainSubmission", {
             success: null, // null indicates in progress
             message: "Submitting scores to blockchain..."
           });
 
           // Submit to backend
-          const backendUrl = "http://localhost:3001";
+          const backendUrl = "https://your-backend-name.netlify.app";
           
           fetch(`${backendUrl}/api/submit-scores`, {
             method: 'POST',
@@ -1202,41 +1224,43 @@
             },
             body: JSON.stringify(scoreData)
           })
-          .then(response => response.json())
+          .then(response => {
+            console.log("Blockchain submission response status:", response.status);
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+          })
           .then(result => {
             console.log("Scores successfully submitted to blockchain:", result);
             
             if (result.success) {
-              // Submission successful - broadcast status and fetch blockchain scores
-              this.publish(this.sessionId, "blockchainSubmission", {
-                success: true,
-                message: "Scores saved to blockchain!",
+              // Store success data for the model to publish later
+              console.log("Setting blockchain status to success...");
+              this.blockchainSubmissionStatus = 'success';
+              this.blockchainSubmissionData = {
                 transactionHash: result.transactionHash,
                 blockNumber: result.blockNumber
-              });
-
-              // Fetch and display blockchain scores after successful submission
-              this.fetchBlockchainScores();
+              };
             } else {
-              this.publish(this.sessionId, "blockchainSubmission", {
-                success: false,
-                message: "Failed to submit scores",
+              console.log("Backend returned success=false:", result);
+              this.blockchainSubmissionStatus = 'error';
+              this.blockchainSubmissionData = {
                 error: result.error
-              });
+              };
             }
           })
           .catch(error => {
             console.error("Error submitting scores to blockchain:", error);
-            this.publish(this.sessionId, "blockchainSubmission", {
-              success: false,
-              message: "Failed to submit scores",
+            this.blockchainSubmissionStatus = 'error';
+            this.blockchainSubmissionData = {
               error: error.message
-            });
+            };
           });
         }
 
         fetchBlockchainScores() {
-          const backendUrl = "http://localhost:3001";
+          const backendUrl = "https://your-backend-name.netlify.app";
           const url = `${backendUrl}/api/get-scores?sessionId=${encodeURIComponent(this.sessionId)}&roundNumber=${this.currentRound}`;
           
           console.log("Fetching blockchain scores:", url);
@@ -1273,8 +1297,8 @@
             
             console.log("Updated scores from blockchain. Session top score:", this.sessionTopScore);
             
-            // Broadcast updated round state with blockchain scores
-            this.publishRoundUpdate();
+            // Flag to publish round update on next poll
+            this.shouldPublishRoundUpdate = true;
           })
           .catch(error => {
             console.error("Error fetching blockchain scores:", error);
@@ -1423,6 +1447,39 @@
             "island5",
           ];
           return islands[Math.floor(Math.random() * islands.length)];
+        }
+
+        checkBlockchainSubmissionStatus() {
+          if (this.blockchainSubmissionStatus === 'pending') {
+            // Still waiting, keep the pending status
+            return;
+          } else if (this.blockchainSubmissionStatus === 'success' && this.blockchainSubmissionData) {
+            // Publish success status
+            this.publish(this.sessionId, "blockchainSubmission", {
+              success: true,
+              message: "Scores saved to blockchain!",
+              transactionHash: this.blockchainSubmissionData.transactionHash,
+              blockNumber: this.blockchainSubmissionData.blockNumber
+            });
+            
+            // Clear the status after publishing
+            this.blockchainSubmissionStatus = null;
+            this.blockchainSubmissionData = null;
+            
+            // Flag to fetch blockchain scores on next poll
+            this.shouldFetchBlockchainScores = true;
+          } else if (this.blockchainSubmissionStatus === 'error' && this.blockchainSubmissionData) {
+            // Publish error status
+            this.publish(this.sessionId, "blockchainSubmission", {
+              success: false,
+              message: "Failed to submit scores",
+              error: this.blockchainSubmissionData.error
+            });
+            
+            // Clear the status after publishing
+            this.blockchainSubmissionStatus = null;
+            this.blockchainSubmissionData = null;
+          }
         }
       }
 
@@ -2426,6 +2483,7 @@
         }
 
         updateBlockchainStatus(status) {
+          console.log("updateBlockchainStatus called with:", status);
           const messageElement = document.getElementById("blockchainMessage");
           const detailsElement = document.getElementById("transactionDetails");
           const txHashElement = document.getElementById("txHash");
@@ -2446,7 +2504,7 @@
             // Show transaction details
             if (status.transactionHash) {
               const shortHash = `${status.transactionHash.slice(0, 8)}...${status.transactionHash.slice(-6)}`;
-              txHashElement.innerHTML = `<a href="https://testnet-explorer.monad.xyz/tx/${status.transactionHash}" target="_blank">${shortHash}</a>`;
+              txHashElement.innerHTML = `<a href="https://testnet.monadscan.com/tx/${status.transactionHash}" target="_blank">${shortHash}</a>`;
             }
             
             if (status.blockNumber) {
