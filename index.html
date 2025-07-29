@@ -1215,7 +1215,7 @@
           });
 
           // Submit to backend
-          const backendUrl = "https://your-backend-name.netlify.app";
+          const backendUrl = "starlit-cobbler-aa77d6.netlify.app";
           
           fetch(`${backendUrl}/api/submit-scores`, {
             method: 'POST',
@@ -1260,7 +1260,7 @@
         }
 
         fetchBlockchainScores() {
-          const backendUrl = "https://your-backend-name.netlify.app";
+          const backendUrl = "starlit-cobbler-aa77d6.netlify.app";
           const url = `${backendUrl}/api/get-scores?sessionId=${encodeURIComponent(this.sessionId)}&roundNumber=${this.currentRound}`;
           
           console.log("Fetching blockchain scores:", url);
