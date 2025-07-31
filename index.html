@@ -790,8 +790,8 @@
           // Start food spawning loop
           this.future(1000).spawnFoodLoop();
 
-          // Start server-side movement update loop
-          this.future(50).updateServerMovement();
+          // Start food rotation updates
+          this.future(50).updateFoodRotation();
 
           // Start round timer loop
           this.future(1000).roundTimerLoop();
@@ -828,22 +828,11 @@
         handlePlayerMove(data) {
           const player = this.players.get(data.playerId);
           if (player) {
-            // Use client's predicted position if reasonable, otherwise interpolate
+            // Accept client position directly (client-authoritative movement)
             if (data.x && data.y) {
-              const dx = data.x - player.x;
-              const dy = data.y - player.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-
-              // If client position is reasonable, use it
-              if (distance < 100) {
-                player.x = data.x;
-                player.y = data.y;
-              }
+              player.x = data.x;
+              player.y = data.y;
             }
-
-            // Store target for server-side movement
-            player.targetX = data.targetX;
-            player.targetY = data.targetY;
 
             // Keep player in bounds
             player.x = Math.max(
@@ -1082,36 +1071,8 @@
           this.future(2000).spawnFoodLoop();
         }
 
-        updateServerMovement() {
-          // Update all players' positions on server-side
-          for (let [playerId, player] of this.players.entries()) {
-            if (player.targetX !== undefined && player.targetY !== undefined) {
-              const dx = player.targetX - player.x;
-              const dy = player.targetY - player.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-
-              if (distance > 2) {
-                const moveSpeed = Math.max(1, 5 - player.size * 0.1);
-                player.x += (dx / distance) * moveSpeed * 0.5; // Slower server movement
-                player.y += (dy / distance) * moveSpeed * 0.5;
-
-                // Keep player in bounds
-                player.x = Math.max(
-                  player.size,
-                  Math.min(WORLD_WIDTH - player.size, player.x)
-                );
-                player.y = Math.max(
-                  player.size,
-                  Math.min(WORLD_HEIGHT - player.size, player.y)
-                );
-
-                // Check island collisions on server side
-                this.checkServerIslandCollisions(player);
-              }
-            }
-          }
-
-          // Update food rotation angles
+        updateFoodRotation() {
+          // Update food rotation angles only
           for (let [foodId, food] of this.food.entries()) {
             if (
               food.angle !== undefined &&
@@ -1123,7 +1084,7 @@
           }
 
           // Schedule next update
-          this.future(50).updateServerMovement(); // 20Hz server updates
+          this.future(50).updateFoodRotation(); // 20Hz food rotation updates
         }
 
         roundTimerLoop() {
@@ -1529,7 +1490,7 @@
 
           // Network sync timing
           this.lastNetworkSync = 0;
-          this.networkSyncInterval = 100; // Send position every 100ms (10Hz)
+          this.networkSyncInterval = 50; // Send position every 50ms (20Hz)
 
           // Subscribe to game updates
           this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
@@ -2092,8 +2053,8 @@
             const dy = serverPlayer.y - this.localPlayer.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance > 50) {
-              // If too far from server position, snap back
+            if (distance > 150) {
+              // If too far from other players, gently adjust (increased threshold for smoother gameplay)
               this.localPlayer.x = serverPlayer.x;
               this.localPlayer.y = serverPlayer.y;
             }
