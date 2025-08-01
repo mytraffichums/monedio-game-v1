@@ -1153,8 +1153,10 @@
             message: "Submitting scores to blockchain..."
           });
 
-          // Submit to backend
-          const backendUrl = "http://localhost:3001";
+          // Submit to backend - auto-detect environment
+          const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? "http://localhost:3001" 
+            : "https://your-app-name.up.railway.app"; // Replace with your Railway app URL
           
           fetch(`${backendUrl}/api/submit-scores`, {
             method: 'POST',
@@ -1197,7 +1199,9 @@
         }
 
         fetchBlockchainScores() {
-          const backendUrl = "http://localhost:3001";
+          const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? "http://localhost:3001" 
+            : "https://your-app-name.up.railway.app"; // Replace with your Railway app URL
           const url = `${backendUrl}/api/get-scores?sessionId=${encodeURIComponent(this.sessionId)}&roundNumber=${this.currentRound}`;
           
           console.log("Fetching blockchain scores:", url);
