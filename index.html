@@ -627,6 +627,48 @@
       const WORLD_WIDTH = 2000;
       const WORLD_HEIGHT = 2000;
 
+      // View Smoothing Constants
+      const Q = {
+        SMOOTH: 0.15,           // Interpolation factor (0 < SMOOTH <= 1)
+        MAX_EXTRAPOLATION: 200  // Maximum ms to extrapolate movement
+      };
+
+      // Vector Math Functions (pure functions for shared use)
+      function add(a, b) {
+        return { x: a.x + b.x, y: a.y + b.y };
+      }
+
+      function subtract(a, b) {
+        return { x: a.x - b.x, y: a.y - b.y };
+      }
+
+      function scale(v, s) {
+        return { x: v.x * s, y: v.y * s };
+      }
+
+      function magnitude(v) {
+        return Math.sqrt(v.x * v.x + v.y * v.y);
+      }
+
+      function normalize(v) {
+        const m = magnitude(v);
+        return m > 0 ? { x: v.x / m, y: v.y / m } : { x: 0, y: 0 };
+      }
+
+      function lerp(a, b, t) {
+        return {
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t
+        };
+      }
+
+      function dotProduct(a, b) {
+        return a.x * b.x + a.y * b.y;
+      }
+
+      // Global view time for smooth interpolation
+      let viewTime = 0;
+
       // Performance Stats Class
       class PerformanceStats {
         constructor() {
@@ -806,15 +848,21 @@
 
         handlePlayerJoin(data) {
           const playerId = data.playerId;
+          const startX = Math.random() * WORLD_WIDTH;
+          const startY = Math.random() * WORLD_HEIGHT;
           this.players.set(playerId, {
             id: playerId,
-            x: Math.random() * WORLD_WIDTH,
-            y: Math.random() * WORLD_HEIGHT,
-            targetX: Math.random() * WORLD_WIDTH,
-            targetY: Math.random() * WORLD_HEIGHT,
+            x: startX,
+            y: startY,
+            targetX: startX,
+            targetY: startY,
             size: 30,
             color: this.getRandomColor(),
             selectedSkin: data.selectedSkin || "orb1", // Default orb skin
+            // Velocity tracking for smooth interpolation
+            vx: 0,
+            vy: 0,
+            lastUpdateTime: this.now()
           });
 
           // Initialize fruit count for new player
@@ -828,10 +876,23 @@
         handlePlayerMove(data) {
           const player = this.players.get(data.playerId);
           if (player) {
+            const now = this.now();
+            const deltaTime = now - player.lastUpdateTime;
+            
             // Accept client position directly (client-authoritative movement)
-            if (data.x && data.y) {
+            if (data.x !== undefined && data.y !== undefined && deltaTime > 0) {
+              // Calculate velocity based on position change
+              const dx = data.x - player.x;
+              const dy = data.y - player.y;
+              
+              // Update velocity (pixels per millisecond)
+              player.vx = dx / deltaTime;
+              player.vy = dy / deltaTime;
+              
+              // Update position
               player.x = data.x;
               player.y = data.y;
+              player.lastUpdateTime = now;
             }
 
             // Keep player in bounds
@@ -846,6 +907,9 @@
 
             // Check food collisions
             this.checkFoodCollisions(player);
+            
+            // Publish movement event for views to track
+            this.publish(data.playerId + "_move", "moved", now);
           }
 
           // Use global throttled update
@@ -1269,6 +1333,10 @@
             player.y = Math.random() * WORLD_HEIGHT;
             player.targetX = player.x;
             player.targetY = player.y;
+            // Reset velocity for new round
+            player.vx = 0;
+            player.vy = 0;
+            player.lastUpdateTime = this.now();
           }
 
           // Clear and respawn food
@@ -1391,6 +1459,51 @@
         }
       }
 
+      // Player Pawn - handles smooth rendering of individual players
+      class PlayerPawn {
+        constructor(player, view) {
+          this.player = player;
+          this.view = view;
+          this.playerId = player.id;
+          
+          // Smooth position (what we actually render)
+          this.smoothPosition = { x: player.x, y: player.y };
+          
+          // Track when the actor last moved
+          this.lastMoved = viewTime;
+          
+          // Subscribe to movement events with frame limiting
+          this.view.subscribe(
+            this.playerId + "_move", 
+            { event: "moved", handling: "oncePerFrame" }, 
+            () => this.onActorMoved()
+          );
+        }
+        
+        onActorMoved() {
+          // Update timestamp when actor moved
+          this.lastMoved = viewTime;
+        }
+        
+        update() {
+          // Calculate extrapolated position based on velocity
+          const deltaTime = Math.min(viewTime - this.lastMoved, Q.MAX_EXTRAPOLATION);
+          const extrapolatedPos = {
+            x: this.player.x + this.player.vx * deltaTime,
+            y: this.player.y + this.player.vy * deltaTime
+          };
+          
+          // Smoothly interpolate toward extrapolated position
+          this.smoothPosition = lerp(this.smoothPosition, extrapolatedPos, Q.SMOOTH);
+        }
+        
+        destroy() {
+          // Clean up subscriptions - in practice, these clean up automatically in Multisynq
+          // when the view is destroyed, but good practice to track this
+          console.log("Destroying pawn for player:", this.playerId);
+        }
+      }
+
       // Game View - handles rendering and input
       class MopeGameView extends Multisynq.View {
         constructor(model) {
@@ -1400,6 +1513,9 @@
           this.ctx = this.canvas.getContext("2d");
           this.playerId =
             this.sessionId + "_" + Math.random().toString(36).substr(2, 9);
+            
+          // Player pawns for smooth rendering
+          this.playerPawns = new Map();
 
           // Set canvas size
           this.canvas.width = window.innerWidth;
@@ -1802,12 +1918,60 @@
         }
 
         startRenderLoop() {
-          const renderFrame = () => {
+          const renderFrame = (timestamp) => {
+            // Update global viewTime for smooth interpolation
+            viewTime = timestamp;
+            
+            // Handle large time gaps (e.g., tab switching)
+            if (timestamp - this.lastFrameTime > 1000) {
+              this.resetPawnTimestamps(timestamp);
+            }
+            this.lastFrameTime = timestamp;
+            
             this.updateLocalPlayer(); // Update local player position
+            this.updatePawns(); // Update smooth player pawns
             this.render(); // Render everything
             requestAnimationFrame(renderFrame);
           };
-          renderFrame();
+          
+          this.lastFrameTime = performance.now();
+          renderFrame(this.lastFrameTime);
+        }
+        
+        resetPawnTimestamps(timestamp) {
+          // Reset pawn timestamps to prevent large extrapolation jumps
+          for (const pawn of this.playerPawns.values()) {
+            pawn.lastMoved = timestamp;
+          }
+        }
+        
+        updatePawns() {
+          // Update all player pawns for smooth movement
+          for (const pawn of this.playerPawns.values()) {
+            pawn.update();
+          }
+        }
+        
+        updatePlayerPawns(players) {
+          const serverPlayerIds = new Set(players.map(p => p.id));
+          
+          // Remove pawns for players who left
+          for (const [playerId, pawn] of this.playerPawns.entries()) {
+            if (!serverPlayerIds.has(playerId)) {
+              pawn.destroy();
+              this.playerPawns.delete(playerId);
+              console.log("Removed pawn for player:", playerId);
+            }
+          }
+          
+          // Create pawns for new players (excluding our own player)
+          for (const player of players) {
+            if (player.id !== this.playerId && !this.playerPawns.has(player.id)) {
+              const pawn = new PlayerPawn(player, this);
+              this.playerPawns.set(player.id, pawn);
+              console.log("Created pawn for player:", player.id);
+            }
+          }
         }
 
         startNetworkLoop() {
@@ -2039,6 +2203,9 @@
             // If server doesn't have the food, our prediction was correct - keep it in the set
           }
 
+          // Manage player pawns
+          this.updatePlayerPawns(state.players);
+
           // Update other players with server data
           this.gameState = state;
 
@@ -2094,6 +2261,15 @@
 
             // Reset predicted food state
             this.predictedEatenFood.clear();
+            
+            // Reset all pawn positions to avoid jumps
+            for (const pawn of this.playerPawns.values()) {
+              if (pawn.player) {
+                pawn.smoothPosition.x = pawn.player.x;
+                pawn.smoothPosition.y = pawn.player.y;
+                pawn.lastMoved = viewTime;
+              }
+            }
             
             console.log("Client reset for new round:", roundState.currentRound);
           }
@@ -2643,13 +2819,21 @@
             }
           });
 
-          // Draw other players (from server data)
-          this.gameState.players.forEach((player) => {
-            if (player.id !== this.playerId) {
-              // Don't draw our own player from server data
-              this.drawPlayerOrb(player.x, player.y, player.size, player.selectedSkin || "orb1", false, player.id);
+          // Draw other players using smooth pawns
+          for (const [playerId, pawn] of this.playerPawns.entries()) {
+            const player = this.gameState.players.find(p => p.id === playerId);
+            if (player) {
+              // Use smooth position from pawn instead of raw server position
+              this.drawPlayerOrb(
+                pawn.smoothPosition.x, 
+                pawn.smoothPosition.y, 
+                player.size, 
+                player.selectedSkin || "orb1", 
+                false, 
+                player.id
+              );
             }
-          });
+          }
 
           // Draw our own player from local prediction (most responsive)
           this.drawPlayerOrb(
