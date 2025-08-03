@@ -624,8 +624,8 @@
 
     <script>
       const API_KEY = "2GzxJfKu10qeIJcl0FsTY5AbhgXQj2ZgaXJhm6jHbK";
-      const WORLD_WIDTH = 2000;
-      const WORLD_HEIGHT = 2000;
+      const WORLD_WIDTH = 4000;
+      const WORLD_HEIGHT = 4000;
 
       // View Smoothing Constants
       const Q = {
@@ -826,7 +826,7 @@
           this.subscribe(this.sessionId, "view-exit", this.handleUserLeave);
 
           // Spawn initial food and islands
-          this.spawnFood(50);
+          this.spawnFood(100);
           this.spawnIslands(4); // Add 4 islands to start
 
           // Start food spawning loop
@@ -1126,8 +1126,8 @@
 
         spawnFoodLoop() {
           // Maintain food count
-          if (this.food.size < 40) {
-            this.spawnFood(5);
+          if (this.food.size < 80) {
+            this.spawnFood(10);
             this.publishGameStateThrottled();
           }
 
@@ -1342,7 +1342,7 @@
           // Clear and respawn food
           this.food.clear();
           this.nextFoodId = 0;
-          this.spawnFood(50);
+          this.spawnFood(100);
 
           // Broadcast new round start
           this.publishRoundUpdate();
