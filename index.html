@@ -210,7 +210,39 @@
         font-size: 14px;
         font-weight: bold;
         border-radius: 6px 6px 0 0;
-        text-align: center;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      #chatMinimizeButton {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 0;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.7;
+        transition: opacity 0.2s ease;
+      }
+
+      #chatMinimizeButton:hover {
+        opacity: 1;
+      }
+
+      #chatContainer.minimized {
+        height: 35px;
+      }
+
+      #chatContainer.minimized #chatMessages,
+      #chatContainer.minimized #chatInputContainer {
+        display: none;
       }
 
       #chatMessages {
@@ -614,7 +646,10 @@
 
     <!-- Chat System -->
     <div id="chatContainer">
-      <div id="chatHeader">Game Chat</div>
+      <div id="chatHeader">
+        <span>Game Chat</span>
+        <button id="chatMinimizeButton">−</button>
+      </div>
       <div id="chatMessages"></div>
       <div id="chatInputContainer">
         <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
@@ -2611,6 +2646,8 @@
           this.chatInput = document.getElementById('chatInput');
           this.chatSendButton = document.getElementById('chatSendButton');
           this.chatMessages = document.getElementById('chatMessages');
+          this.chatContainer = document.getElementById('chatContainer');
+          this.chatMinimizeButton = document.getElementById('chatMinimizeButton');
 
           // Setup event listeners
           this.chatSendButton.addEventListener('click', () => this.sendMessage());
@@ -2620,6 +2657,19 @@
               this.sendMessage();
             }
           });
+          this.chatMinimizeButton.addEventListener('click', () => this.toggleChatMinimize());
+        }
+
+        toggleChatMinimize() {
+          const isMinimized = this.chatContainer.classList.contains('minimized');
+          
+          if (isMinimized) {
+            this.chatContainer.classList.remove('minimized');
+            this.chatMinimizeButton.textContent = '−';
+          } else {
+            this.chatContainer.classList.add('minimized');
+            this.chatMinimizeButton.textContent = '+';
+          }
         }
 
         sendMessage() {
