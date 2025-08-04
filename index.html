@@ -61,6 +61,10 @@
       #gameCanvas {
         display: block;
         background: linear-gradient(45deg, #1e3a4a 0%, #2c4f63 50%, #1a3b4d 100%);
+        cursor: default;
+      }
+
+      #gameCanvas.pointer-locked {
         cursor: none;
       }
 
@@ -1211,6 +1215,11 @@
           this.showingScores = true;
           this.scoreEndTime = this.now() + this.scoreDisplayDuration;
 
+          // Unlock cursor at round end
+          if (document.pointerLockElement) {
+            document.exitPointerLock();
+          }
+
           // Calculate and store final scores
           this.roundScores.clear();
           for (let [playerId, player] of this.players.entries()) {
@@ -1877,12 +1886,13 @@
             this.isPointerLocked = document.pointerLockElement === this.canvas;
             console.log("Pointer lock:", this.isPointerLocked ? "enabled" : "disabled");
             
-            // Update instruction visibility
-            const instruction = document.getElementById("cursorInstruction");
+            // Update cursor visibility and instruction
             if (this.isPointerLocked) {
-              instruction.classList.add("hidden");
+              this.canvas.classList.add("pointer-locked");
+              document.getElementById("cursorInstruction").classList.add("hidden");
             } else {
-              instruction.classList.remove("hidden");
+              this.canvas.classList.remove("pointer-locked");
+              document.getElementById("cursorInstruction").classList.remove("hidden");
             }
           });
 
