@@ -1838,7 +1838,7 @@
           this.canvas.height = window.innerHeight;
 
           // Recalculate camera position to keep player centered (adjusted for zoom)
-          const zoomScale = 1.12;
+          const zoomScale = 1.8; // More zoomed in like mope.io
           const effectiveWidth = window.innerWidth / zoomScale;
           const effectiveHeight = window.innerHeight / zoomScale;
 
@@ -1937,7 +1937,7 @@
             }
 
             // Update local target immediately for responsiveness (adjusted for zoom)
-            const zoomScale = 1.12;
+            const zoomScale = 1.8; // More zoomed in like mope.io
             this.localPlayer.targetX =
               this.mousePos.x / zoomScale + this.camera.x;
             this.localPlayer.targetY =
@@ -2040,9 +2040,11 @@
             console.log("Exiting drift mode");
           }
 
-          // Movement parameters
-          const maxSpeed = Math.max(2, 5 - this.localPlayer.size * 0.1);
-          const acceleration = 0.3; // How quickly we accelerate toward target
+          // Movement parameters - Enhanced for mope.io style
+          const baseSpeed = 12; // Much faster base speed
+          const sizeSpeedPenalty = 0.15; // More dramatic size penalty
+          const maxSpeed = Math.max(3, baseSpeed - this.localPlayer.size * sizeSpeedPenalty);
+          const acceleration = 0.5; // Faster acceleration for more responsive controls
           const normalFriction = 0.92; // Normal friction when near cursor
           const driftFriction = 0.995; // Much less friction when drifting (loses only 0.5% per frame)
           const minDriftSpeed = 0.8; // Minimum speed when drifting
@@ -2120,7 +2122,7 @@
           this.checkIslandCollisions();
 
           // Update camera to follow local player (adjusted for zoom)
-          const zoomScale = 1.12;
+          const zoomScale = 1.8; // More zoomed in like mope.io
           const effectiveWidth = window.innerWidth / zoomScale;
           const effectiveHeight = window.innerHeight / zoomScale;
 
@@ -2816,7 +2818,7 @@
 
           // Save context for camera transform and zoom
           this.ctx.save();
-          this.ctx.scale(1.12, 1.12); // 12% zoom in
+          this.ctx.scale(1.8, 1.8); // More zoomed in like mope.io
           this.ctx.translate(-this.camera.x, -this.camera.y);
 
           // Draw food (protocol logos)
