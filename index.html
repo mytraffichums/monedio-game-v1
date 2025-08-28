@@ -586,6 +586,7 @@
       <div>Players: <span id="playersCount">1</span></div>
       <div>Round: <span id="roundDisplay">1</span></div>
       <div>Time: <span id="timeDisplay">5:00</span></div>
+
     </div>
     <div id="perfStats">
       <div>FPS: <span id="fpsDisplay">--</span></div>
@@ -842,6 +843,11 @@
           this.scoreDisplayDuration = 10 * 1000; // Show scores for 10 seconds
           this.sessionTopScore = null; // Track session-wide top scorer
 
+          // Stage system
+          this.stages = ['ocean', 'space', 'volcanic', 'forest', 'swamp'];
+          this.stageIndex = Math.floor(Math.random() * this.stages.length);
+          this.currentStage = this.stages[this.stageIndex]; // Start with random stage
+
           // Global throttling
           this.lastGlobalGameStateUpdate = 0;
 
@@ -857,6 +863,7 @@
           this.subscribe(this.sessionId, "playerMove", this.handlePlayerMove);
           this.subscribe(this.sessionId, "playerLeave", this.handlePlayerLeave);
           this.subscribe(this.sessionId, "foodEaten", this.handleFoodEaten);
+          this.subscribe(this.sessionId, "playerEaten", this.handlePlayerEaten);
           this.subscribe(this.sessionId, "orbSelection", this.handleOrbSelection);
 
           // Subscribe to chat events
@@ -876,6 +883,8 @@
 
           // Start round timer loop
           this.future(1000).roundTimerLoop();
+
+          // Bot system removed for multi-browser testing
 
           // Periodic broadcast removed - game states sent on events only
 
@@ -947,6 +956,9 @@
             // Check food collisions
             this.checkFoodCollisions(player);
             
+            // Check player vs player collisions
+            this.checkPlayerCollisions(player);
+            
             // Publish movement event for views to track
             this.publish(data.playerId + "_move", "moved", now);
           }
@@ -970,6 +982,8 @@
             this.publishGameStateThrottled();
           }
         }
+
+
 
         // Chat handlers
         handleMessage(data) {
@@ -1133,6 +1147,96 @@
             }
           }
         }
+
+        checkPlayerCollisions(player) {
+          // Check collisions with other players
+          for (let [otherPlayerId, otherPlayer] of this.players.entries()) {
+            if (otherPlayerId === player.id) continue; // Skip self
+            
+            const dx = player.x - otherPlayer.x;
+            const dy = player.y - otherPlayer.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minEatingSize = 1.1; // Must be 10% bigger to eat
+
+
+
+            // Check if player can eat the other player
+            if (
+              distance < player.size + otherPlayer.size &&
+              player.size >= otherPlayer.size * minEatingSize
+            ) {
+              // Player eats other player!
+              // Increase eater's size based on eaten player's size
+              const sizeGain = Math.floor(otherPlayer.size * 0.5); // Gain 50% of eaten player's size
+              player.size += sizeGain;
+
+              // Respawn the eaten player
+              this.respawnPlayer(otherPlayer.id);
+              
+              // Update leaderboard
+              this.publishLeaderboard();
+              this.publishGameStateThrottled();
+              break;
+            }
+          }
+        }
+
+        handlePlayerEaten(data) {
+          const { eaterId, eatenId } = data;
+          const eater = this.players.get(eaterId);
+          const eaten = this.players.get(eatenId);
+
+                      if (eater && eaten) {
+              const dx = eater.x - eaten.x;
+              const dy = eater.y - eaten.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              const minEatingSize = 1.1; // Must be 10% bigger to eat
+
+              // Verify the collision on server side
+              if (
+                distance < eater.size + eaten.size &&
+                eater.size >= eaten.size * minEatingSize
+              ) {
+                // Increase eater's size
+              const sizeGain = Math.floor(eaten.size * 0.5);
+              eater.size += sizeGain;
+
+              // Respawn eaten player
+              this.respawnPlayer(eatenId);
+              
+              this.publishLeaderboard();
+              this.publishGameStateThrottled();
+            }
+          }
+        }
+
+        respawnPlayer(playerId) {
+          const player = this.players.get(playerId);
+          if (player) {
+            // Reset to starting size and random position
+            player.size = 30;
+            player.x = Math.random() * WORLD_WIDTH;
+            player.y = Math.random() * WORLD_HEIGHT;
+            player.targetX = player.x;
+            player.targetY = player.y;
+            player.vx = 0;
+            player.vy = 0;
+            player.lastUpdateTime = this.now();
+
+            // Reset fruit count
+            this.playerFruitCounts.set(playerId, 0);
+
+            // Notify the specific player about their respawn
+            this.publish(playerId, "respawn", {
+              x: player.x,
+              y: player.y,
+              size: player.size
+            });
+
+          }
+        }
+
+
 
         spawnFood(count) {
           for (let i = 0; i < count; i++) {
@@ -1364,6 +1468,9 @@
           this.showingScores = false;
           this.roundScores.clear();
 
+          // Select new stage for this round
+          this.selectNewStage();
+
           // Reset fruit counts for new round
           this.playerFruitCounts.clear();
           for (let playerId of this.players.keys()) {
@@ -1400,6 +1507,14 @@
           this.publishGameStateThrottled();
         }
 
+        selectNewStage() {
+          // Randomly select a new stage
+          const randomIndex = Math.floor(Math.random() * this.stages.length);
+          this.currentStage = this.stages[randomIndex];
+          this.stageIndex = randomIndex;
+          console.log(`New stage selected: ${this.currentStage}`);
+        }
+
         getRoundState() {
           const now = this.now();
           const timeRemaining = this.isRoundActive ? 
@@ -1411,7 +1526,8 @@
             isRoundActive: this.isRoundActive,
             showingScores: this.showingScores,
             scores: Array.from(this.roundScores.values()).sort((a, b) => b.score - a.score),
-            sessionTopScore: this.sessionTopScore
+            sessionTopScore: this.sessionTopScore,
+            currentStage: this.currentStage
           };
         }
 
@@ -1577,7 +1693,7 @@
           ];
           this.loadLogos();
 
-          // Load island SVGs
+          // Load island SVGs (themed)
           this.islandLogos = {};
           this.islandCanvases = {}; // Pre-rendered canvas cache
           this.islandTypes = [
@@ -1587,7 +1703,14 @@
             "island4",
             "island5",
           ];
+          this.stages = ['ocean', 'space', 'volcanic', 'forest', 'swamp'];
+          this.currentStage = 'ocean'; // Will be updated by server
           this.loadIslandLogos();
+
+          // Particle system
+          this.particles = [];
+          this.maxParticles = 15;
+          this.initParticles();
 
           // Load orb SVGs
           this.orbLogos = {};
@@ -1659,6 +1782,11 @@
           // Subscribe to game updates
           this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
             this.updateGameState(state)
+          );
+          
+          // Subscribe to player respawn events
+          this.subscribe(this.playerId, "respawn", (data) =>
+            this.handleRespawn(data)
           );
 
           // Subscribe to round updates
@@ -1747,33 +1875,31 @@
         }
 
         loadIslandLogos() {
-          this.islandTypes.forEach((islandType) => {
-            const img = new Image();
-            img.onload = () => {
-              // Pre-render SVG to canvas for better performance
-              this.preRenderIslandCanvas(islandType, img);
-              console.log(
-                `Loaded ${islandType} island (${
-                  Object.keys(this.islandLogos).filter(
-                    (k) =>
-                      this.islandLogos[k].complete &&
-                      this.islandLogos[k].naturalWidth > 0
-                  ).length
-                }/${this.islandTypes.length})`
-              );
-            };
-            img.onerror = () => {
-              console.log(`Failed to load ${islandType} island`);
-              // Mark as failed so we don't try to draw it
-              this.islandLogos[islandType] = null;
-              this.islandCanvases[islandType] = null;
-            };
-            img.src = `assets/islands/${islandType}.svg`;
-            this.islandLogos[islandType] = img;
+          // Load islands for all stages
+          this.stages.forEach((stage) => {
+            this.islandLogos[stage] = {};
+            this.islandCanvases[stage] = {};
+            
+            this.islandTypes.forEach((islandType) => {
+              const img = new Image();
+              img.onload = () => {
+                // Pre-render SVG to canvas for better performance
+                this.preRenderIslandCanvas(stage, islandType, img);
+                console.log(`Loaded ${stage}/${islandType} island`);
+              };
+              img.onerror = () => {
+                console.log(`Failed to load ${stage}/${islandType} island - using fallback`);
+                // Mark as failed so we use fallback rendering
+                this.islandLogos[stage][islandType] = null;
+                this.islandCanvases[stage][islandType] = null;
+              };
+              img.src = `assets/islands/${stage}/${islandType}.png`;
+              this.islandLogos[stage][islandType] = img;
+            });
           });
         }
 
-        preRenderIslandCanvas(islandType, img) {
+        preRenderIslandCanvas(stage, islandType, img) {
           // Create off-screen canvas for this island type
           const maxSize = 220; // Max island size (110 radius * 2)
           const canvas = document.createElement('canvas');
@@ -1781,12 +1907,129 @@
           canvas.height = maxSize;
           const ctx = canvas.getContext('2d');
           
-          // Draw SVG to canvas at maximum size
+          // Draw image to canvas at maximum size
           ctx.drawImage(img, 0, 0, maxSize, maxSize);
           
           // Cache the pre-rendered canvas
-          this.islandCanvases[islandType] = canvas;
-          console.log(`Pre-rendered ${islandType} to canvas for performance`);
+          this.islandCanvases[stage][islandType] = canvas;
+        }
+
+        initParticles() {
+          // Initialize particles for current stage
+          this.particles = [];
+          for (let i = 0; i < this.maxParticles; i++) {
+            this.particles.push(this.createParticle());
+          }
+        }
+
+        createParticle() {
+          return {
+            x: Math.random() * WORLD_WIDTH,
+            y: Math.random() * WORLD_HEIGHT,
+            vx: (Math.random() - 0.5) * 0.5, // Slow movement
+            vy: (Math.random() - 0.5) * 0.5,
+            size: 2 + Math.random() * 2, // 2-4px
+            opacity: 0.3 + Math.random() * 0.4, // 0.3-0.7 opacity
+            life: Math.random() * 1000 + 2000 // 2-3 second life
+          };
+        }
+
+        updateParticles() {
+          // Update particle positions and lifecycle
+          for (let i = this.particles.length - 1; i >= 0; i--) {
+            const particle = this.particles[i];
+            
+            // Move particle
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            
+            // Wrap around world edges
+            if (particle.x < 0) particle.x = WORLD_WIDTH;
+            if (particle.x > WORLD_WIDTH) particle.x = 0;
+            if (particle.y < 0) particle.y = WORLD_HEIGHT;
+            if (particle.y > WORLD_HEIGHT) particle.y = 0;
+            
+            // Age particle
+            particle.life -= 16; // ~60fps
+            
+            // Remove dead particles and create new ones
+            if (particle.life <= 0) {
+              this.particles[i] = this.createParticle();
+            }
+          }
+        }
+
+        applyStageBackground(gradient) {
+          // Apply themed background gradients
+          switch (this.currentStage) {
+            case 'ocean':
+              gradient.addColorStop(0, "#1e3a4a");
+              gradient.addColorStop(0.5, "#2c4f63");
+              gradient.addColorStop(1, "#1a3b4d");
+              break;
+            case 'space':
+              gradient.addColorStop(0, "#1a1a2e");
+              gradient.addColorStop(0.5, "#16213e");
+              gradient.addColorStop(1, "#0f1419");
+              break;
+            case 'volcanic':
+              gradient.addColorStop(0, "#4a1e1e");
+              gradient.addColorStop(0.5, "#6b2c2c");
+              gradient.addColorStop(1, "#3d1a1a");
+              break;
+            case 'forest':
+              gradient.addColorStop(0, "#2d4a2b");
+              gradient.addColorStop(0.5, "#1a3d1a");
+              gradient.addColorStop(1, "#0f2d0f");
+              break;
+            case 'swamp':
+              gradient.addColorStop(0, "#3d4a2d");
+              gradient.addColorStop(0.5, "#2d3d1a");
+              gradient.addColorStop(1, "#1a2d0f");
+              break;
+            default:
+              // Fallback to ocean
+              gradient.addColorStop(0, "#1e3a4a");
+              gradient.addColorStop(0.5, "#2c4f63");
+              gradient.addColorStop(1, "#1a3b4d");
+          }
+        }
+
+        getStageIslandColor() {
+          // Fallback island colors for each stage
+          switch (this.currentStage) {
+            case 'ocean': return "#2F4F4F";
+            case 'space': return "#4A4A6A";
+            case 'volcanic': return "#8B4513";
+            case 'forest': return "#228B22";
+            case 'swamp': return "#556B2F";
+            default: return "#2F4F4F";
+          }
+        }
+
+        drawParticles() {
+          // Draw theme-specific particles
+          this.particles.forEach(particle => {
+            this.ctx.save();
+            this.ctx.globalAlpha = particle.opacity;
+            this.ctx.fillStyle = this.getParticleColor();
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.restore();
+          });
+        }
+
+        getParticleColor() {
+          // Theme-specific particle colors
+          switch (this.currentStage) {
+            case 'ocean': return "#87CEEB"; // Light blue bubbles
+            case 'space': return "#FFFFFF"; // White stars
+            case 'volcanic': return "#FF4500"; // Orange sparks
+            case 'forest': return "#90EE90"; // Light green leaves
+            case 'swamp': return "#ADFF2F"; // Green wisps
+            default: return "#87CEEB";
+          }
         }
 
         loadOrbLogos() {
@@ -1975,6 +2218,7 @@
             
             this.updateLocalPlayer(); // Update local player position
             this.updatePawns(); // Update smooth player pawns
+            this.updateParticles(); // Update particle system
             this.render(); // Render everything
             requestAnimationFrame(renderFrame);
           };
@@ -2034,10 +2278,8 @@
           // Update drift state
           if (shouldDrift && !this.isDrifting) {
             this.isDrifting = true;
-            console.log("Entering drift mode");
           } else if (!shouldDrift && this.isDrifting) {
             this.isDrifting = false;
-            console.log("Exiting drift mode");
           }
 
           // Movement parameters - Enhanced for mope.io style
@@ -2117,6 +2359,9 @@
 
           // Client-side food collision detection for immediate feedback
           this.checkLocalFoodCollisions();
+          
+          // Client-side player collision detection for immediate feedback
+          this.checkLocalPlayerCollisions();
 
           // Check island collisions and handle bouncing
           this.checkIslandCollisions();
@@ -2170,9 +2415,40 @@
                   playerY: this.localPlayer.y,
                 });
 
-                console.log("Food eaten locally:", food.id);
+
               }
             }
+          });
+        }
+
+        checkLocalPlayerCollisions() {
+          // Check collisions with other players
+          this.gameState.players.forEach((otherPlayer) => {
+            if (otherPlayer.id === this.playerId) return; // Skip self
+            
+            const dx = this.localPlayer.x - otherPlayer.x;
+            const dy = this.localPlayer.y - otherPlayer.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minEatingSize = 1.1; // Must be 10% bigger to eat
+            
+
+
+            // Check if we can eat the other player
+            if (
+              distance < this.localPlayer.size + otherPlayer.size &&
+              this.localPlayer.size >= otherPlayer.size * minEatingSize
+            ) {
+              // Send player eaten event to server
+              this.publish(this.sessionId, "playerEaten", {
+                eaterId: this.playerId,
+                eatenId: otherPlayer.id,
+                eaterX: this.localPlayer.x,
+                eaterY: this.localPlayer.y,
+              });
+              return; // Only eat one player per frame
+            }
+            
+
           });
         }
 
@@ -2291,9 +2567,32 @@
             state.players.length;
         }
 
+        handleRespawn(data) {
+          // Reset local player to respawn state
+          this.localPlayer.x = data.x;
+          this.localPlayer.y = data.y;
+          this.localPlayer.size = data.size;
+          this.localPlayer.targetX = data.x;
+          this.localPlayer.targetY = data.y;
+          this.localPlayer.vx = 0;
+          this.localPlayer.vy = 0;
+          
+          // Clear any predicted food state
+          this.predictedEatenFood.clear();
+        }
+
         updateRoundState(roundState) {
           const previousRound = this.roundState.currentRound;
+          const previousStage = this.currentStage;
           this.roundState = roundState;
+          
+          // Check if stage changed
+          if (roundState.currentStage && roundState.currentStage !== previousStage) {
+            this.currentStage = roundState.currentStage;
+            console.log(`Stage changed to: ${this.currentStage}`);
+            // Reinitialize particles for new stage
+            this.initParticles();
+          }
 
           // Check if a new round started
           if (roundState.currentRound > previousRound && roundState.isRoundActive) {
@@ -2808,11 +3107,9 @@
           // Measure input latency
           this.perfStats.measureInputLatency();
 
-          // Clear canvas with starry night gradient
+          // Clear canvas with themed gradient
           const gradient = this.ctx.createLinearGradient(0, 0, window.innerWidth, window.innerHeight);
-          gradient.addColorStop(0, "#1e3a4a");
-          gradient.addColorStop(0.5, "#2c4f63");
-          gradient.addColorStop(1, "#1a3b4d");
+          this.applyStageBackground(gradient);
           this.ctx.fillStyle = gradient;
           this.ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
@@ -2852,11 +3149,16 @@
             }
           });
 
-          // Draw islands with pre-rendered canvases for better performance
+          // Draw particles first (behind everything)
+          this.drawParticles();
+
+          // Draw islands with themed pre-rendered canvases
           this.gameState.islands.forEach((island) => {
-            const islandCanvas = this.islandCanvases[island.islandType];
+            const stageCanvases = this.islandCanvases[this.currentStage];
+            const islandCanvas = stageCanvases ? stageCanvases[island.islandType] : null;
+            
             if (islandCanvas) {
-              // Draw from pre-rendered canvas (much faster than SVG)
+              // Draw from themed pre-rendered canvas
               this.ctx.save();
               this.ctx.translate(island.x, island.y);
               this.ctx.drawImage(
@@ -2868,15 +3170,15 @@
               );
               this.ctx.restore();
             } else {
-              // Fallback to black circle if island canvas not ready or failed
-              this.ctx.fillStyle = "#2F4F2F";
+              // Fallback to themed colored circle if island canvas not ready
+              this.ctx.fillStyle = this.getStageIslandColor();
               this.ctx.beginPath();
               this.ctx.arc(island.x, island.y, island.size, 0, Math.PI * 2);
               this.ctx.fill();
               
-              // Island outline only for fallback circles
+              // Island outline
               this.ctx.strokeStyle = "#000";
-              this.ctx.lineWidth = 1;
+              this.ctx.lineWidth = 2;
               this.ctx.stroke();
             }
           });
@@ -2974,6 +3276,7 @@
             const textY = y + size + 5;
             this.ctx.strokeText(playerName, x, textY);
             this.ctx.fillText(playerName, x, textY);
+            
             
             this.ctx.restore();
           }
