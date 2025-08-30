@@ -1156,7 +1156,7 @@
             const dx = player.x - otherPlayer.x;
             const dy = player.y - otherPlayer.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
-            const minEatingSize = 1.1; // Must be 10% bigger to eat
+            const minEatingSize = 1.25; // Must be 25% bigger to eat
 
 
 
@@ -1190,7 +1190,7 @@
               const dx = eater.x - eaten.x;
               const dy = eater.y - eaten.y;
               const distance = Math.sqrt(dx * dx + dy * dy);
-              const minEatingSize = 1.1; // Must be 10% bigger to eat
+              const minEatingSize = 1.25; // Must be 25% bigger to eat
 
               // Verify the collision on server side
               if (
@@ -1608,14 +1608,8 @@
         }
 
         getRandomIslandType() {
-          const islands = [
-            "island1",
-            "island2",
-            "island3",
-            "island4",
-            "island5",
-          ];
-          return islands[Math.floor(Math.random() * islands.length)];
+          // Only use island1 for each stage
+          return "island1";
         }
       }
 
@@ -1697,11 +1691,7 @@
           this.islandLogos = {};
           this.islandCanvases = {}; // Pre-rendered canvas cache
           this.islandTypes = [
-            "island1",
-            "island2",
-            "island3",
-            "island4",
-            "island5",
+            "island1"
           ];
           this.stages = ['ocean', 'space', 'volcanic', 'forest', 'swamp'];
           this.currentStage = 'ocean'; // Will be updated by server
@@ -1709,7 +1699,7 @@
 
           // Particle system
           this.particles = [];
-          this.maxParticles = 15;
+          this.maxParticles = 25; // More particles for richer effects
           this.initParticles();
 
           // Load orb SVGs
@@ -1923,15 +1913,92 @@
         }
 
         createParticle() {
-          return {
+          const baseParticle = {
             x: Math.random() * WORLD_WIDTH,
             y: Math.random() * WORLD_HEIGHT,
-            vx: (Math.random() - 0.5) * 0.5, // Slow movement
-            vy: (Math.random() - 0.5) * 0.5,
-            size: 2 + Math.random() * 2, // 2-4px
-            opacity: 0.3 + Math.random() * 0.4, // 0.3-0.7 opacity
-            life: Math.random() * 1000 + 2000 // 2-3 second life
+            life: Math.random() * 3000 + 2000, // 2-5 second life
+            age: 0,
+            maxLife: 0
           };
+          
+          // Set maxLife for lifecycle calculations
+          baseParticle.maxLife = baseParticle.life;
+          
+          // Create theme-specific particle properties
+          switch (this.currentStage) {
+            case 'ocean':
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.3,
+                vy: -0.2 - Math.random() * 0.3, // Bubbles rise
+                size: 1 + Math.random() * 3,
+                opacity: 0.4 + Math.random() * 0.4,
+                type: 'bubble',
+                wobble: Math.random() * Math.PI * 2, // For bubble wobble
+                wobbleSpeed: 0.02 + Math.random() * 0.03
+              };
+              
+            case 'space':
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.1,
+                vy: (Math.random() - 0.5) * 0.1,
+                size: 0.5 + Math.random() * 2,
+                opacity: 0.6 + Math.random() * 0.4,
+                type: 'star',
+                twinkle: Math.random() * Math.PI * 2,
+                twinkleSpeed: 0.05 + Math.random() * 0.1
+              };
+              
+            case 'volcanic':
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.8,
+                vy: -0.5 - Math.random() * 1.0, // Sparks fly up
+                size: 1 + Math.random() * 2,
+                opacity: 0.8 + Math.random() * 0.2,
+                type: 'spark',
+                gravity: 0.01, // Sparks fall back down
+                fade: 0.98 // Sparks fade quickly
+              };
+              
+            case 'forest':
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.4,
+                vy: 0.1 + Math.random() * 0.3, // Leaves fall gently
+                size: 2 + Math.random() * 3,
+                opacity: 0.5 + Math.random() * 0.3,
+                type: 'leaf',
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.05, // Leaves rotate as they fall
+                sway: Math.random() * Math.PI * 2,
+                swaySpeed: 0.02 + Math.random() * 0.02
+              };
+              
+            case 'swamp':
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.2,
+                vy: (Math.random() - 0.5) * 0.2,
+                size: 1 + Math.random() * 2,
+                opacity: 0.3 + Math.random() * 0.5,
+                type: 'wisp',
+                pulse: Math.random() * Math.PI * 2,
+                pulseSpeed: 0.03 + Math.random() * 0.04,
+                trail: [] // For wisp trails
+              };
+              
+            default:
+              return {
+                ...baseParticle,
+                vx: (Math.random() - 0.5) * 0.3,
+                vy: -0.2 - Math.random() * 0.3,
+                size: 1 + Math.random() * 3,
+                opacity: 0.4 + Math.random() * 0.4,
+                type: 'bubble'
+              };
+          }
         }
 
         updateParticles() {
@@ -1939,23 +2006,87 @@
           for (let i = this.particles.length - 1; i >= 0; i--) {
             const particle = this.particles[i];
             
+            // Update theme-specific behaviors
+            this.updateParticleByType(particle);
+            
             // Move particle
             particle.x += particle.vx;
             particle.y += particle.vy;
             
-            // Wrap around world edges
-            if (particle.x < 0) particle.x = WORLD_WIDTH;
-            if (particle.x > WORLD_WIDTH) particle.x = 0;
-            if (particle.y < 0) particle.y = WORLD_HEIGHT;
-            if (particle.y > WORLD_HEIGHT) particle.y = 0;
+            // Wrap around world edges (except for some particle types)
+            if (particle.type !== 'spark') { // Sparks can disappear off-screen
+              if (particle.x < 0) particle.x = WORLD_WIDTH;
+              if (particle.x > WORLD_WIDTH) particle.x = 0;
+              if (particle.y < 0) particle.y = WORLD_HEIGHT;
+              if (particle.y > WORLD_HEIGHT) particle.y = 0;
+            }
             
             // Age particle
             particle.life -= 16; // ~60fps
+            particle.age += 16;
             
             // Remove dead particles and create new ones
-            if (particle.life <= 0) {
+            if (particle.life <= 0 || particle.x < -50 || particle.x > WORLD_WIDTH + 50 || 
+                particle.y < -50 || particle.y > WORLD_HEIGHT + 50) {
               this.particles[i] = this.createParticle();
             }
+          }
+        }
+
+        updateParticleByType(particle) {
+          switch (particle.type) {
+            case 'bubble':
+              // Bubbles wobble as they rise
+              particle.wobble += particle.wobbleSpeed;
+              particle.vx += Math.sin(particle.wobble) * 0.02;
+              // Bubbles get slightly bigger as they rise (decompression)
+              particle.size += 0.001;
+              break;
+              
+            case 'star':
+              // Stars twinkle
+              particle.twinkle += particle.twinkleSpeed;
+              particle.opacity = 0.3 + Math.abs(Math.sin(particle.twinkle)) * 0.7;
+              break;
+              
+            case 'spark':
+              // Sparks affected by gravity and fade over time
+              particle.vy += particle.gravity;
+              particle.opacity *= particle.fade;
+              // Sparks slow down due to air resistance
+              particle.vx *= 0.995;
+              particle.vy *= 0.995;
+              break;
+              
+            case 'leaf':
+              // Leaves sway as they fall and rotate
+              particle.sway += particle.swaySpeed;
+              particle.vx += Math.sin(particle.sway) * 0.03;
+              particle.rotation += particle.rotationSpeed;
+              break;
+              
+            case 'wisp':
+              // Wisps pulse and leave trails
+              particle.pulse += particle.pulseSpeed;
+              particle.opacity = 0.2 + Math.abs(Math.sin(particle.pulse)) * 0.6;
+              
+              // Add to trail
+              particle.trail.push({x: particle.x, y: particle.y, opacity: particle.opacity * 0.3});
+              if (particle.trail.length > 5) {
+                particle.trail.shift(); // Keep trail short
+              }
+              
+              // Wisps drift randomly
+              particle.vx += (Math.random() - 0.5) * 0.02;
+              particle.vy += (Math.random() - 0.5) * 0.02;
+              
+              // Limit wisp speed
+              const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy);
+              if (speed > 0.5) {
+                particle.vx = (particle.vx / speed) * 0.5;
+                particle.vy = (particle.vy / speed) * 0.5;
+              }
+              break;
           }
         }
 
@@ -2008,27 +2139,163 @@
         }
 
         drawParticles() {
-          // Draw theme-specific particles
+          // Draw theme-specific particles with advanced effects
           this.particles.forEach(particle => {
-            this.ctx.save();
-            this.ctx.globalAlpha = particle.opacity;
-            this.ctx.fillStyle = this.getParticleColor();
-            this.ctx.beginPath();
-            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
+            this.drawParticleByType(particle);
           });
         }
 
-        getParticleColor() {
-          // Theme-specific particle colors
+        drawParticleByType(particle) {
+          this.ctx.save();
+          this.ctx.globalAlpha = particle.opacity;
+          
+          switch (particle.type) {
+            case 'bubble':
+              // Draw bubble with highlight
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+              this.ctx.fill();
+              
+              // Add bubble highlight
+              this.ctx.globalAlpha = particle.opacity * 0.8;
+              this.ctx.fillStyle = '#FFFFFF';
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x - particle.size * 0.3, particle.y - particle.size * 0.3, particle.size * 0.3, 0, Math.PI * 2);
+              this.ctx.fill();
+              break;
+              
+            case 'star':
+              // Draw twinkling star
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.drawStar(particle.x, particle.y, particle.size);
+              
+              // Add glow effect
+              this.ctx.globalAlpha = particle.opacity * 0.3;
+              this.ctx.fillStyle = '#FFFFFF';
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size * 2, 0, Math.PI * 2);
+              this.ctx.fill();
+              break;
+              
+            case 'spark':
+              // Draw spark with tail
+              this.ctx.strokeStyle = this.getParticleColor(particle.type);
+              this.ctx.lineWidth = particle.size;
+              this.ctx.lineCap = 'round';
+              this.ctx.beginPath();
+              this.ctx.moveTo(particle.x, particle.y);
+              this.ctx.lineTo(particle.x - particle.vx * 3, particle.y - particle.vy * 3);
+              this.ctx.stroke();
+              
+              // Bright center
+              this.ctx.fillStyle = '#FFFF00';
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size * 0.5, 0, Math.PI * 2);
+              this.ctx.fill();
+              break;
+              
+            case 'leaf':
+              // Draw rotating leaf shape
+              this.ctx.translate(particle.x, particle.y);
+              this.ctx.rotate(particle.rotation);
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.drawLeaf(particle.size);
+              break;
+              
+            case 'wisp':
+              // Draw wisp trail first
+              if (particle.trail && particle.trail.length > 1) {
+                this.ctx.strokeStyle = this.getParticleColor(particle.type);
+                this.ctx.lineWidth = particle.size * 0.5;
+                this.ctx.lineCap = 'round';
+                this.ctx.beginPath();
+                this.ctx.moveTo(particle.trail[0].x, particle.trail[0].y);
+                for (let i = 1; i < particle.trail.length; i++) {
+                  this.ctx.globalAlpha = particle.trail[i].opacity;
+                  this.ctx.lineTo(particle.trail[i].x, particle.trail[i].y);
+                }
+                this.ctx.stroke();
+              }
+              
+              // Draw wisp center with glow
+              this.ctx.globalAlpha = particle.opacity;
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+              this.ctx.fill();
+              
+              // Add glow
+              this.ctx.globalAlpha = particle.opacity * 0.4;
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size * 2, 0, Math.PI * 2);
+              this.ctx.fill();
+              break;
+              
+            default:
+              // Simple circle fallback
+              this.ctx.fillStyle = this.getParticleColor(particle.type);
+              this.ctx.beginPath();
+              this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+              this.ctx.fill();
+          }
+          
+          this.ctx.restore();
+        }
+
+        drawStar(x, y, size) {
+          // Draw a 4-pointed star
+          const spikes = 4;
+          const outerRadius = size;
+          const innerRadius = size * 0.4;
+          
+          this.ctx.beginPath();
+          for (let i = 0; i < spikes * 2; i++) {
+            const angle = (i * Math.PI) / spikes;
+            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+            const px = x + Math.cos(angle) * radius;
+            const py = y + Math.sin(angle) * radius;
+            if (i === 0) {
+              this.ctx.moveTo(px, py);
+            } else {
+              this.ctx.lineTo(px, py);
+            }
+          }
+          this.ctx.closePath();
+          this.ctx.fill();
+        }
+
+        drawLeaf(size) {
+          // Draw a simple leaf shape
+          this.ctx.beginPath();
+          this.ctx.ellipse(0, 0, size * 0.6, size, 0, 0, Math.PI * 2);
+          this.ctx.fill();
+          
+          // Add leaf vein
+          this.ctx.strokeStyle = 'rgba(0, 100, 0, 0.5)';
+          this.ctx.lineWidth = 0.5;
+          this.ctx.beginPath();
+          this.ctx.moveTo(0, -size);
+          this.ctx.lineTo(0, size);
+          this.ctx.stroke();
+        }
+
+        getParticleColor(type) {
+          // Theme-specific particle colors with type variations
           switch (this.currentStage) {
-            case 'ocean': return "#87CEEB"; // Light blue bubbles
-            case 'space': return "#FFFFFF"; // White stars
-            case 'volcanic': return "#FF4500"; // Orange sparks
-            case 'forest': return "#90EE90"; // Light green leaves
-            case 'swamp': return "#ADFF2F"; // Green wisps
-            default: return "#87CEEB";
+            case 'ocean': 
+              return type === 'bubble' ? "#87CEEB" : "#4682B4";
+            case 'space': 
+              return type === 'star' ? "#FFFFFF" : "#E6E6FA";
+            case 'volcanic': 
+              return type === 'spark' ? "#FF4500" : "#DC143C";
+            case 'forest': 
+              return type === 'leaf' ? "#228B22" : "#90EE90";
+            case 'swamp': 
+              return type === 'wisp' ? "#ADFF2F" : "#9ACD32";
+            default: 
+              return "#87CEEB";
           }
         }
 
@@ -2061,7 +2328,7 @@
 
         preRenderOrbCanvas(orbType, img) {
           // Create off-screen canvas for this orb type
-          const maxSize = 200; // Max player size * 2 for safety
+          const maxSize = 512; // Higher quality for larger players
           const canvas = document.createElement('canvas');
           canvas.width = maxSize;
           canvas.height = maxSize;
@@ -2283,7 +2550,7 @@
           }
 
           // Movement parameters - Enhanced for mope.io style
-          const baseSpeed = 12; // Much faster base speed
+          const baseSpeed = 6; // Reduced base speed for better control
           const sizeSpeedPenalty = 0.15; // More dramatic size penalty
           const maxSpeed = Math.max(3, baseSpeed - this.localPlayer.size * sizeSpeedPenalty);
           const acceleration = 0.5; // Faster acceleration for more responsive controls
@@ -2429,7 +2696,7 @@
             const dx = this.localPlayer.x - otherPlayer.x;
             const dy = this.localPlayer.y - otherPlayer.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
-            const minEatingSize = 1.1; // Must be 10% bigger to eat
+            const minEatingSize = 1.25; // Must be 25% bigger to eat
             
 
 
