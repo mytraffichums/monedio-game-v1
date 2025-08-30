@@ -80,6 +80,9 @@
       let monadGamesIdWallet = null;
       let playerUsername = null;
       
+      // Store usernames for all players (wallet address -> username)
+      let playerUsernames = new Map();
+      
       // Privy API Configuration
       const PRIVY_CONFIG = {
         appId: 'cmeyhvfve018ejl0bz7mmwuf3',
@@ -132,6 +135,13 @@
               console.log('Found existing auth, restoring session...');
               monadGamesIdWallet = authData.wallet;
               playerUsername = authData.username;
+              
+              // Restore usernames map if available
+              if (authData.usernames) {
+                playerUsernames = new Map(Object.entries(authData.usernames));
+                console.log('Restored usernames for', playerUsernames.size, 'players');
+              }
+              
               updateUserInterface();
               hideLoginSection();
             } else {
@@ -175,10 +185,11 @@
           // Fetch username from Monad Games ID API
           await fetchUsername();
           
-          // Save auth data
+          // Save auth data including usernames map
           const authData = {
             wallet: walletAddress,
             username: playerUsername,
+            usernames: Object.fromEntries(playerUsernames), // Convert Map to Object for storage
             expiry: Date.now() + (24 * 60 * 60 * 1000) // 24 hours
           };
           localStorage.setItem('monad_games_id_auth', JSON.stringify(authData));
@@ -216,7 +227,7 @@
 
       // User authentication is now handled by the wallet address input above
 
-      // Fetch username from Monad Games ID API
+      // Fetch username from Monad Games ID API for current player
       async function fetchUsername() {
         if (!monadGamesIdWallet) return;
         
@@ -226,6 +237,8 @@
           
           if (data.hasUsername && data.user) {
             playerUsername = data.user.username;
+            // Store in the global usernames map
+            playerUsernames.set(monadGamesIdWallet, playerUsername);
             console.log('Player username:', playerUsername);
           } else {
             // User doesn't have a username registered
@@ -235,6 +248,53 @@
         } catch (error) {
           console.error('Error fetching username:', error);
           playerUsername = null;
+        }
+      }
+
+      // Fetch username for any player (async, non-blocking)
+      async function fetchUsernameForPlayer(walletAddress) {
+        // Don't fetch if we already have it or if it's not a wallet address
+        if (playerUsernames.has(walletAddress) || !walletAddress.startsWith('0x')) {
+          return;
+        }
+        
+        // Add a temporary placeholder to prevent multiple fetches
+        playerUsernames.set(walletAddress, null);
+        
+        try {
+          const response = await fetch(`https://monad-games-id-site.vercel.app/api/check-wallet?wallet=${walletAddress}`);
+          const data = await response.json();
+          
+          if (data.hasUsername && data.user) {
+            // Store the username
+            playerUsernames.set(walletAddress, data.user.username);
+            console.log(`Fetched username for ${walletAddress}:`, data.user.username);
+            
+            // Trigger UI updates where this player might be displayed
+            refreshPlayerDisplays();
+          } else {
+            // No username found, keep the wallet address format
+            playerUsernames.delete(walletAddress);
+          }
+        } catch (error) {
+          console.error('Error fetching username for player:', walletAddress, error);
+          // Remove the placeholder on error
+          playerUsernames.delete(walletAddress);
+        }
+      }
+
+      // Refresh player displays when new usernames are fetched
+      function refreshPlayerDisplays() {
+        // This will trigger a re-render of player names in the game
+        // The game engine will call getDisplayNameForPlayer again
+        console.log('Refreshing player displays with new usernames');
+        
+        // Force update leaderboard if it's visible
+        const leaderboardEntries = document.getElementById('leaderboardEntries');
+        if (leaderboardEntries && leaderboardEntries.children.length > 0) {
+          // Trigger a leaderboard refresh by dispatching a custom event
+          // The game model will handle this and refresh the leaderboard
+          window.dispatchEvent(new CustomEvent('refreshPlayerNames'));
         }
       }
 
@@ -289,12 +349,16 @@
         console.log('Playing anonymously');
       }
 
-      // Logout is now handled by the React component
+      // Reset user state on logout
       function resetUserState() {
         // Reset state when user logs out
         currentUser = null;
         monadGamesIdWallet = null;
         playerUsername = null;
+        playerUsernames.clear(); // Clear all cached usernames
+        
+        // Clear saved auth
+        localStorage.removeItem('monad_games_id_auth');
         
         // Update UI
         const userInfo = document.getElementById('userInfo');
@@ -326,18 +390,28 @@
 
       // Get display name for any player ID
       window.getDisplayNameForPlayer = function(playerId) {
+        // Check if we have a username stored for this player
+        if (playerId && playerUsernames.has(playerId)) {
+          return playerUsernames.get(playerId);
+        }
+        
         // If it's the current player, use their username
         if (playerId === window.getPlayerId() && playerUsername) {
           return playerUsername;
         }
-        // For wallet addresses, show shortened format
+        
+        // For wallet addresses, try to fetch username and show shortened format meanwhile
         if (playerId && playerId.startsWith('0x') && playerId.length === 42) {
+          // Try to fetch username asynchronously (don't block UI)
+          fetchUsernameForPlayer(playerId);
           return `${playerId.slice(0, 6)}...${playerId.slice(-4)}`;
         }
+        
         // For legacy random IDs, show last 4 characters
         if (playerId && playerId.length > 4) {
           return playerId.slice(-4);
         }
+        
         return playerId || 'Anonymous';
       }
 
@@ -420,7 +494,7 @@
       #monadLoginSection {
         margin-bottom: 30px;
         padding: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: black;
         border-radius: 12px;
         border: 2px solid rgba(255, 255, 255, 0.2);
       }
@@ -1438,8 +1512,8 @@
           if (!text || text.trim().length === 0) return;
           if (text.length > 200) return; // Length limit
           
-          // Create player nickname from player ID (last 4 characters)
-          const nickname = userId.slice(-4);
+          // Get proper display name (includes Privy usernames)
+          const nickname = window.getDisplayNameForPlayer(userId);
           
           const message = {
             id: this.generateMessageId(),
@@ -1467,7 +1541,7 @@
           this.publish(viewId, "messageHistory", recentMessages);
           
           // Announce user joined
-          const nickname = viewId.slice(-4);
+          const nickname = window.getDisplayNameForPlayer(viewId);
           this.publish(this.sessionId, "userJoined", {
             userId: viewId,
             nickname: nickname
@@ -1476,7 +1550,7 @@
 
         handleUserLeave(viewId) {
           // Announce user left
-          const nickname = viewId.slice(-4);
+          const nickname = window.getDisplayNameForPlayer(viewId);
           this.publish(this.sessionId, "userLeft", {
             userId: viewId,
             nickname: nickname
@@ -2997,7 +3071,7 @@
           }
 
           // Movement parameters - Enhanced for mope.io style
-          const baseSpeed = 6; // Reduced base speed for better control
+          const baseSpeed = 9.0; // Increased base speed by 20% (was 7.5)
           const sizeSpeedPenalty = 0.15; // More dramatic size penalty
           const maxSpeed = Math.max(3, baseSpeed - this.localPlayer.size * sizeSpeedPenalty);
           const acceleration = 0.5; // Faster acceleration for more responsive controls
