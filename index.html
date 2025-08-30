@@ -1272,8 +1272,8 @@
 
           this.frameCount++;
 
-          // Update FPS and stats every 250ms
-          if (now - this.lastFpsUpdate > 250) {
+          // Update FPS and stats every 500ms for better performance
+          if (now - this.lastFpsUpdate > 500) {
             this.updateStats(now);
             this.lastFpsUpdate = now;
           }
@@ -2220,7 +2220,7 @@
 
           // Particle system
           this.particles = [];
-          this.maxParticles = 25; // More particles for richer effects
+          this.maxParticles = 15; // Reduced for better performance
           this.initParticles();
 
           // Load orb SVGs
@@ -2265,6 +2265,9 @@
           // Initialize performance stats
           this.perfStats = new PerformanceStats();
 
+          // Cached viewport bounds for performance
+          this.viewBounds = { left: 0, right: 0, top: 0, bottom: 0 };
+
           // Countdown timer tracking
           this.countdownTimer = null;
           this.isCountdownRunning = false;
@@ -2288,7 +2291,7 @@
 
           // Network sync timing
           this.lastNetworkSync = 0;
-          this.networkSyncInterval = 50; // Send position every 50ms (20Hz)
+          this.networkSyncInterval = 66; // Send position every 66ms (~15Hz) for better performance
 
           // Subscribe to game updates
           this.subscribe(this.sessionId, "gameStateUpdate", (state) =>
@@ -2660,8 +2663,13 @@
         }
 
         drawParticles() {
-          // Draw theme-specific particles with advanced effects
+          // Draw theme-specific particles with advanced effects and viewport culling
           this.particles.forEach(particle => {
+            // Skip particles outside viewport (using cached bounds with smaller padding for particles)
+            if (particle.x < this.viewBounds.left + 50 || particle.x > this.viewBounds.right - 50 ||
+                particle.y < this.viewBounds.top + 50 || particle.y > this.viewBounds.bottom - 50) {
+              return;
+            }
             this.drawParticleByType(particle);
           });
         }
@@ -3175,15 +3183,20 @@
           // Check collisions with food items that aren't already predicted as eaten
           this.gameState.food.forEach((food) => {
             if (!this.predictedEatenFood.has(food.id)) {
+              // Early exit if player is too small to eat this food
+              if (this.localPlayer.size < food.size) {
+                return;
+              }
+
               const dx = this.localPlayer.x - food.x;
               const dy = this.localPlayer.y - food.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
+              
+              // Use squared distance to avoid expensive sqrt operation
+              const distanceSquared = dx * dx + dy * dy;
+              const collisionDistanceSquared = (this.localPlayer.size + food.size) ** 2;
 
-              // Check if player is close enough AND big enough to eat the logo
-              if (
-                distance < this.localPlayer.size + food.size &&
-                this.localPlayer.size >= food.size
-              ) {
+              // Check if player is close enough to eat the logo
+              if (distanceSquared < collisionDistanceSquared) {
                 // Predict food is eaten - hide it immediately
                 this.predictedEatenFood.add(food.id);
 
@@ -3214,18 +3227,22 @@
           this.gameState.players.forEach((otherPlayer) => {
             if (otherPlayer.id === this.playerId) return; // Skip self
             
-            const dx = this.localPlayer.x - otherPlayer.x;
-            const dy = this.localPlayer.y - otherPlayer.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
             const minEatingSize = 1.25; // Must be 25% bigger to eat
             
-
+            // Early exit if we're too small to eat this player
+            if (this.localPlayer.size < otherPlayer.size * minEatingSize) {
+              return;
+            }
+            
+            const dx = this.localPlayer.x - otherPlayer.x;
+            const dy = this.localPlayer.y - otherPlayer.y;
+            
+            // Use squared distance to avoid expensive sqrt operation
+            const distanceSquared = dx * dx + dy * dy;
+            const collisionDistanceSquared = (this.localPlayer.size + otherPlayer.size) ** 2;
 
             // Check if we can eat the other player
-            if (
-              distance < this.localPlayer.size + otherPlayer.size &&
-              this.localPlayer.size >= otherPlayer.size * minEatingSize
-            ) {
+            if (distanceSquared < collisionDistanceSquared) {
               // Send player eaten event to server
               this.publish(this.sessionId, "playerEaten", {
                 eaterId: this.playerId,
@@ -3888,6 +3905,16 @@
           });
         }
 
+        updateViewportBounds() {
+          // Calculate and cache viewport bounds for culling
+          const zoomScale = 1.8;
+          const padding = 100; // Extra padding to prevent pop-in
+          this.viewBounds.left = this.camera.x - padding;
+          this.viewBounds.right = this.camera.x + (window.innerWidth / zoomScale) + padding;
+          this.viewBounds.top = this.camera.y - padding;
+          this.viewBounds.bottom = this.camera.y + (window.innerHeight / zoomScale) + padding;
+        }
+
         render() {
           // Start performance measurement
           this.perfStats.startFrame();
@@ -3906,16 +3933,23 @@
           this.ctx.scale(1.8, 1.8); // More zoomed in like mope.io
           this.ctx.translate(-this.camera.x, -this.camera.y);
 
-          // Draw food (protocol logos)
+          // Calculate viewport bounds for culling (cached for performance)
+          this.updateViewportBounds();
+
+          // Draw food (protocol logos) with viewport culling
           this.gameState.food.forEach((food) => {
             // Skip food that we predict has been eaten
             if (!this.predictedEatenFood.has(food.id)) {
+              // Viewport culling - skip if outside view
+              const logoSize = Math.min(food.size * 1.5, 50);
+              if (food.x + logoSize < this.viewBounds.left || food.x - logoSize > this.viewBounds.right ||
+                  food.y + logoSize < this.viewBounds.top || food.y - logoSize > this.viewBounds.bottom) {
+                return; // Skip rendering this food item
+              }
+
               const logo = this.protocolLogos[food.logoType];
               if (logo && logo.complete && logo.naturalWidth > 0) {
                 // Draw logo centered at food position with rotation
-                // Logo size can now be larger than players, with reasonable maximum
-                const logoSize = Math.min(food.size * 1.5, 50); // Max size of 50 for bigger variety
-
                 this.ctx.save();
                 this.ctx.translate(food.x, food.y);
                 this.ctx.rotate(food.angle || 0);
@@ -3940,8 +3974,14 @@
           // Draw particles first (behind everything)
           this.drawParticles();
 
-          // Draw islands with themed pre-rendered canvases
+          // Draw islands with themed pre-rendered canvases and viewport culling
           this.gameState.islands.forEach((island) => {
+            // Viewport culling for islands
+            if (island.x + island.size < this.viewBounds.left || island.x - island.size > this.viewBounds.right ||
+                island.y + island.size < this.viewBounds.top || island.y - island.size > this.viewBounds.bottom) {
+              return; // Skip rendering this island
+            }
+
             const stageCanvases = this.islandCanvases[this.currentStage];
             const islandCanvas = stageCanvases ? stageCanvases[island.islandType] : null;
             
@@ -3971,10 +4011,17 @@
             }
           });
 
-          // Draw other players using smooth pawns
+          // Draw other players using smooth pawns with viewport culling
           for (const [playerId, pawn] of this.playerPawns.entries()) {
             const player = this.gameState.players.find(p => p.id === playerId);
             if (player) {
+              // Viewport culling for players
+              const playerSize = player.selectedSkin === "orb2" ? player.size * 1.3 : player.size;
+              if (pawn.smoothPosition.x + playerSize < this.viewBounds.left || pawn.smoothPosition.x - playerSize > this.viewBounds.right ||
+                  pawn.smoothPosition.y + playerSize < this.viewBounds.top || pawn.smoothPosition.y - playerSize > this.viewBounds.bottom) {
+                continue; // Skip rendering this player
+              }
+
               // Use smooth position from pawn instead of raw server position
               this.drawPlayerOrb(
                 pawn.smoothPosition.x, 
